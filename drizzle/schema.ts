@@ -1,17 +1,17 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import {
+  int,
+  mysqlEnum,
+  mysqlTable,
+  text,
+  timestamp,
+  varchar,
+  json,
+  bigint,
+  float,
+} from "drizzle-orm/mysql-core";
 
-/**
- * Core user table backing auth flow.
- * Extend this file with additional tables as your product grows.
- * Columns use camelCase to match both database fields and generated types.
- */
 export const users = mysqlTable("users", {
-  /**
-   * Surrogate primary key. Auto-incremented numeric value managed by the database.
-   * Use this for relations between tables.
-   */
   id: int("id").autoincrement().primaryKey(),
-  /** Manus OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
@@ -25,4 +25,63 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+// 分析任务表
+export const analysisTasks = mysqlTable("analysis_tasks", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  status: mysqlEnum("status", ["pending", "processing", "completed", "failed"])
+    .default("pending")
+    .notNull(),
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AnalysisTask = typeof analysisTasks.$inferSelect;
+
+// 上传的报表文件表
+export const reportFiles = mysqlTable("report_files", {
+  id: int("id").autoincrement().primaryKey(),
+  taskId: int("taskId").notNull(),
+  originalName: varchar("originalName", { length: 255 }).notNull(),
+  fileKey: varchar("fileKey", { length: 512 }).notNull(),
+  fileUrl: varchar("fileUrl", { length: 512 }).notNull(),
+  reportType: mysqlEnum("reportType", [
+    "business_report",
+    "campaign_report",
+    "targeting_report",
+    "search_term_report",
+    "advertised_product_report",
+    "unknown",
+  ])
+    .default("unknown")
+    .notNull(),
+  rowCount: int("rowCount").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ReportFile = typeof reportFiles.$inferSelect;
+
+// 分析结果主表
+export const analysisResults = mysqlTable("analysis_results", {
+  id: int("id").autoincrement().primaryKey(),
+  taskId: int("taskId").notNull().unique(),
+  // 账户总览
+  accountOverview: json("accountOverview"),
+  // 负责人分析
+  ownerAnalysis: json("ownerAnalysis"),
+  // Campaign优化建议
+  campaignSuggestions: json("campaignSuggestions"),
+  // Targeting优化建议
+  targetingSuggestions: json("targetingSuggestions"),
+  // Search Term清单
+  searchTermLists: json("searchTermLists"),
+  // 运营动作清单
+  actionItems: json("actionItems"),
+  // 原始指标数据
+  rawMetrics: json("rawMetrics"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AnalysisResult = typeof analysisResults.$inferSelect;
