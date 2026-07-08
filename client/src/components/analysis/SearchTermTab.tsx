@@ -16,13 +16,20 @@ interface SearchTermItem {
 }
 
 interface SearchTermLists {
-  negativeKeywords: SearchTermItem[];
-  exactMatchConversions: SearchTermItem[];
-  scaleUpTerms: SearchTermItem[];
+  // 前端期望的key（展示用）
+  negativeKeywords?: SearchTermItem[];
+  exactMatchConversions?: SearchTermItem[];
+  scaleUpTerms?: SearchTermItem[];
+  // 后端实际返回的key
+  negateList?: SearchTermItem[];
+  toExactList?: SearchTermItem[];
+  amplifyList?: SearchTermItem[];
 }
 
 interface Props {
   data: SearchTermLists;
+  ownerFilter?: string;
+  ownerName?: string;
 }
 
 const LIST_CONFIG = [
@@ -58,7 +65,7 @@ const LIST_CONFIG = [
   },
 ];
 
-export default function SearchTermTab({ data }: Props) {
+export default function SearchTermTab({ data, ownerFilter = "ALL", ownerName = "ALL" }: Props) {
   const [activeList, setActiveList] = useState<"negativeKeywords" | "exactMatchConversions" | "scaleUpTerms">("negativeKeywords");
 
   if (!data) {
@@ -76,15 +83,25 @@ export default function SearchTermTab({ data }: Props) {
     });
   };
 
+  // 将后端 key 映射到前端期望 key
+  const normalizedData: Record<string, SearchTermItem[]> = {
+    negativeKeywords: data.negativeKeywords ?? data.negateList ?? [],
+    exactMatchConversions: data.exactMatchConversions ?? data.toExactList ?? [],
+    scaleUpTerms: data.scaleUpTerms ?? data.amplifyList ?? [],
+  };
+
   const currentConfig = LIST_CONFIG.find((c) => c.key === activeList)!;
-  const currentData = data[activeList] ?? [];
+  const rawData = normalizedData[activeList] ?? [];
+  // 按负责人过滤
+  const currentData = ownerFilter === "ALL" ? rawData : rawData.filter((item) => item.ownerName === ownerName);
 
   return (
     <div className="space-y-4">
       {/* Tab切换 */}
       <div className="grid grid-cols-3 gap-3">
         {LIST_CONFIG.map((config) => {
-          const count = (data[config.key] ?? []).length;
+          const rawList = normalizedData[config.key] ?? [];
+          const count = ownerFilter === "ALL" ? rawList.length : rawList.filter((item) => item.ownerName === ownerName).length;
           const isActive = activeList === config.key;
           return (
             <button

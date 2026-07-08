@@ -34,11 +34,18 @@ interface OwnerMetrics {
 
 interface Props {
   data: OwnerMetrics[];
+  ownerFilter?: string;
 }
 
 const RANK_COLORS = ["#fbbf24", "#94a3b8", "#cd7c2f"];
 
-export default function OwnerAnalysisTab({ data }: Props) {
+export default function OwnerAnalysisTab({ data, ownerFilter = "ALL" }: Props) {
+  // 如果有筛选，将选中负责人排到首位
+  const displayData = ownerFilter !== "ALL"
+    ? [...data].sort((a, b) =>
+        a.ownerCode === ownerFilter ? -1 : b.ownerCode === ownerFilter ? 1 : 0
+      )
+    : data;
   if (!data || data.length === 0) {
     return (
       <div className="flex items-center justify-center py-20 text-muted-foreground">
@@ -47,30 +54,41 @@ export default function OwnerAnalysisTab({ data }: Props) {
     );
   }
 
-  const chartData = data.map((o) => ({
+  const chartData = displayData.map((o) => ({
     name: o.ownerName,
     花费: o.spend,
     销售额: o.adSales,
     浪费花费: o.wasteSpend,
   }));
 
+  // 当有筛选时，首卡展示选中负责人，其余展示全部排名前3（不筛选时显示前3）
+  const topCards = ownerFilter !== "ALL"
+    ? displayData.slice(0, 1) // 筛选时只展示选中负责人卡片
+    : data.slice(0, 3);       // 全部模式展示前3
+
   return (
     <div className="space-y-6">
       {/* 排名卡片 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {data.slice(0, 3).map((owner, i) => (
+      <div className={`grid gap-4 ${ownerFilter !== "ALL" ? "grid-cols-1 max-w-sm" : "grid-cols-1 md:grid-cols-3"}`}>
+        {topCards.map((owner, i) => {
+          // 全部模式下使用真实排名，筛选模式下显示该负责人实际排名
+          const displayRank = ownerFilter !== "ALL" ? owner.rank : i + 1;
+          const rankColor = RANK_COLORS[displayRank - 1] ?? RANK_COLORS[2];
+          return (
           <div
             key={owner.ownerCode}
-            className="rounded-xl border border-border/50 bg-card p-5 relative overflow-hidden"
+            className={`rounded-xl border p-5 relative overflow-hidden ${
+              ownerFilter !== "ALL" ? "border-primary/40 bg-primary/5" : "border-border/50 bg-card"
+            }`}
           >
             <div
               className="absolute top-3 right-3 flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold"
               style={{
-                background: `${RANK_COLORS[i]}20`,
-                color: RANK_COLORS[i],
+                background: `${rankColor}20`,
+                color: rankColor,
               }}
             >
-              {i === 0 ? <Trophy className="h-4 w-4" /> : `#${i + 1}`}
+              {displayRank === 1 ? <Trophy className="h-4 w-4" /> : `#${displayRank}`}
             </div>
             <div className="mb-3">
               <div className="text-lg font-bold text-foreground">{owner.ownerName}</div>
@@ -97,7 +115,8 @@ export default function OwnerAnalysisTab({ data }: Props) {
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* 花费对比图 */}
@@ -142,8 +161,10 @@ export default function OwnerAnalysisTab({ data }: Props) {
               </tr>
             </thead>
             <tbody>
-              {data.map((owner) => (
-                <tr key={owner.ownerCode} className="border-b border-border/30 hover:bg-muted/10 transition-colors">
+              {displayData.map((owner) => {
+                const isSelected = ownerFilter !== "ALL" && owner.ownerCode === ownerFilter;
+                return (
+                <tr key={owner.ownerCode} className={`border-b border-border/30 transition-colors ${isSelected ? "bg-primary/5 border-l-2 border-l-primary" : "hover:bg-muted/10"}`}>
                   <td className="px-4 py-3 text-muted-foreground">#{owner.rank}</td>
                   <td className="px-4 py-3">
                     <div className="font-medium text-foreground">{owner.ownerName}</div>
@@ -169,7 +190,8 @@ export default function OwnerAnalysisTab({ data }: Props) {
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{owner.campaignCount}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

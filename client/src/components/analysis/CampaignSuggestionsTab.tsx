@@ -21,9 +21,10 @@ interface CampaignSuggestion {
 
 interface Props {
   data: CampaignSuggestion[];
+  ownerFilter?: string;
 }
 
-export default function CampaignSuggestionsTab({ data }: Props) {
+export default function CampaignSuggestionsTab({ data, ownerFilter = "ALL" }: Props) {
   const [filter, setFilter] = useState<"ALL" | "P1" | "P2" | "P3">("ALL");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -35,10 +36,12 @@ export default function CampaignSuggestionsTab({ data }: Props) {
     );
   }
 
-  const filtered = filter === "ALL" ? data : data.filter((d) => d.priority === filter);
-  const p1Count = data.filter((d) => d.priority === "P1").length;
-  const p2Count = data.filter((d) => d.priority === "P2").length;
-  const p3Count = data.filter((d) => d.priority === "P3").length;
+  // 先按负责人过滤，再按优先级过滤
+  const ownerFiltered = ownerFilter === "ALL" ? data : data.filter((d) => d.ownerCode === ownerFilter);
+  const filtered = filter === "ALL" ? ownerFiltered : ownerFiltered.filter((d) => d.priority === filter);
+  const p1Count = ownerFiltered.filter((d) => d.priority === "P1").length;
+  const p2Count = ownerFiltered.filter((d) => d.priority === "P2").length;
+  const p3Count = ownerFiltered.filter((d) => d.priority === "P3").length;
 
   const toggleExpand = (name: string) => {
     setExpanded((prev) => {

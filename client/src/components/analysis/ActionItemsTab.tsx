@@ -17,6 +17,8 @@ interface ActionItem {
 interface Props {
   data: ActionItem[];
   onDownload: () => void;
+  ownerFilter?: string;
+  ownerName?: string;
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -27,7 +29,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   "放大投放": "text-emerald-400 bg-emerald-400/10",
 };
 
-export default function ActionItemsTab({ data, onDownload }: Props) {
+export default function ActionItemsTab({ data, onDownload, ownerFilter = "ALL", ownerName = "ALL" }: Props) {
   const [filter, setFilter] = useState<"ALL" | "P1" | "P2" | "P3">("ALL");
   const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
   const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -40,15 +42,17 @@ export default function ActionItemsTab({ data, onDownload }: Props) {
     );
   }
 
-  const categories = ["ALL", ...Array.from(new Set(data.map((d) => d.category)))];
-  let filtered = filter === "ALL" ? data : data.filter((d) => d.priority === filter);
+  // 先按负责人过滤
+  const ownerFiltered = ownerFilter === "ALL" ? data : data.filter((d) => d.ownerName === ownerName);
+  const categories = ["ALL", ...Array.from(new Set(ownerFiltered.map((d) => d.category)))];
+  let filtered = filter === "ALL" ? ownerFiltered : ownerFiltered.filter((d) => d.priority === filter);
   if (categoryFilter !== "ALL") {
     filtered = filtered.filter((d) => d.category === categoryFilter);
   }
 
-  const p1Count = data.filter((d) => d.priority === "P1").length;
-  const p2Count = data.filter((d) => d.priority === "P2").length;
-  const p3Count = data.filter((d) => d.priority === "P3").length;
+  const p1Count = ownerFiltered.filter((d) => d.priority === "P1").length;
+  const p2Count = ownerFiltered.filter((d) => d.priority === "P2").length;
+  const p3Count = ownerFiltered.filter((d) => d.priority === "P3").length;
 
   const toggleCheck = (id: string) => {
     setChecked((prev) => {

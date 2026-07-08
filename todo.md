@@ -28,3 +28,12 @@
 - [x] 编写Vitest单元测试（15条全部通过）
 - [x] 样式精修与响应式适配
 - [x] 最终交付
+
+## Phase 6: 负责人筛选功能
+- [x] Analysis.tsx 顶层增加统一负责人筛选器（下拉选择 + 全部/各负责人）
+- [x] AccountOverviewTab 支持按负责人过滤 ownerAnalysis 数据展示
+- [x] CampaignSuggestionsTab 接收 ownerFilter prop，按负责人过滤
+- [x] TargetingSuggestionsTab 接收 ownerFilter prop，按负责人过滤
+- [x] SearchTermTab 接收 ownerFilter prop，按负责人过滤
+- [x] ActionItemsTab 接收 ownerFilter prop，按负责人过滤
+- [x] OwnerAnalysisTab 筛选后高亮/聚焦选中负责人
