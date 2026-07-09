@@ -46,3 +46,13 @@
 - [x] 新增SearchTermAnalysis深度分析引擎（词级别聚合、词性分类、标签判断）
 - [x] 数据库新增searchTermAnalysis字段
 - [x] 重构SearchTermTab：10个Tab包含概览、高价值词、亏损词、无效词、潜力词、花费TOP词、否词、转精准、放大、负责人词汇总
+
+## Phase 8: 图二维度分析 + 词根分析
+- [x] 修复花费TOP词数据传递问题（topTermsBySpend未传入前端）
+- [x] 后端新增词根提取引擎（词根聚合花费/订单/ACOS）
+- [x] 后端新增匹配类型维度分析（Exact/Phrase/Broad/Auto对比）
+- [x] 后端新增广告组合维度分析（Portfolio级别汇总）
+- [x] 前端新增词根分析Tab（词根排名、词根下词列表）
+- [x] 前端新增匹配类型分析Tab（柱状图对比）
+- [x] 前端新增运营人员分析Tab（搜索词维度的负责人对比）
+- [x] 前端新增搜索词二维散点图（花费 vs CVR，气泡大小=订单数）

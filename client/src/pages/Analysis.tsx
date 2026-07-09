@@ -172,10 +172,20 @@ export default function Analysis() {
     { enabled: !!taskId }
   );
 
+  const runAnalysisMutation = trpc.analysis.runAnalysis.useMutation({
+    onSuccess: () => {
+      toast.success("重新分析已启动，正在处理中...");
+      refetchResult();
+    },
+    onError: (err) => {
+      toast.error(`重新分析失败：${err.message}`);
+    },
+  });
+
   const {
     data: resultData,
     isLoading: resultLoading,
-    refetch,
+    refetch: refetchResult,
   } = trpc.analysis.getResult.useQuery(
     { taskId },
     {
@@ -284,11 +294,18 @@ export default function Analysis() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => refetch()}
-              disabled={isProcessing}
+              onClick={() => {
+                if (isCompleted) {
+                  // 已完成的任务：重新触发分析（重跑引擎，获取最新结果）
+                  runAnalysisMutation.mutate({ taskId });
+                } else {
+                  refetchResult();
+                }
+              }}
+              disabled={isProcessing || runAnalysisMutation.isPending}
             >
-              <RefreshCw className={`h-4 w-4 mr-1 ${isProcessing ? "animate-spin" : ""}`} />
-              刷新
+              <RefreshCw className={`h-4 w-4 mr-1 ${(isProcessing || runAnalysisMutation.isPending) ? "animate-spin" : ""}`} />
+              {runAnalysisMutation.isPending ? "分析中..." : "重新分析"}
             </Button>
             {isCompleted && (
               <Button size="sm" onClick={handleDownloadCSV}>

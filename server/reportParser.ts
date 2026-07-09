@@ -259,6 +259,7 @@ function normalizeRow(raw: Record<string, unknown>, reportType: ReportType): Sta
     row.top_of_search_impression_share = parsePct(get(["Top-of-search Impression Share"]));
   } else if (reportType === "search_term_report") {
     row.campaign_name = String(get(["Campaign Name"]) ?? "");
+    row.portfolio_name = String(get(["Portfolio name", "Portfolio Name"]) ?? "");
     row.ad_group_name = String(get(["Ad Group Name"]) ?? "");
     row.targeting = String(get(["Targeting"]) ?? "");
     row.match_type = String(get(["Match Type"]) ?? "");

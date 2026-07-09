@@ -452,6 +452,49 @@ export interface SearchTermAggregate {
   labelReason: string;
 }
 
+/** 词根聚合指标 */
+export interface WordRootAggregate {
+  root: string;                 // 词根（首词或核心词）
+  termCount: number;            // 包含该词根的搜索词数
+  totalImpressions: number;
+  totalClicks: number;
+  totalSpend: number;
+  totalOrders: number;
+  totalSales: number;
+  acos: number | null;
+  cvr: number | null;
+  ctr: number | null;
+  topTerms: string[];           // 花费最高的子词（最多5个）
+  label: "high_value" | "loss" | "invalid" | "potential" | "normal";
+}
+
+/** 匹配类型维度分析 */
+export interface MatchTypeAnalysis {
+  matchType: string;
+  termCount: number;
+  totalImpressions: number;
+  totalClicks: number;
+  totalSpend: number;
+  totalOrders: number;
+  totalSales: number;
+  acos: number | null;
+  cvr: number | null;
+  ctr: number | null;
+  cpc: number | null;
+  spendShare: number;           // 占总花费比例
+}
+
+/** 二维散点图数据点 */
+export interface ScatterPoint {
+  searchTerm: string;
+  spend: number;
+  cvr: number;
+  orders: number;
+  acos: number | null;
+  label: string;
+  wordCategory: WordCategory;
+}
+
 /** 搜索词深度分析结果 */
 export interface SearchTermAnalysis {
   totalTerms: number;          // 搜索词总数
@@ -481,6 +524,12 @@ export interface SearchTermAnalysis {
     highValueCount: number;
     invalidCount: number;
   }>;
+  // 新增：词根分析
+  wordRootAnalysis: WordRootAggregate[];
+  // 新增：匹配类型维度分析
+  matchTypeAnalysis: MatchTypeAnalysis[];
+  // 新增：二维散点图数据（花费 vs CVR）
+  scatterData: ScatterPoint[];
 }
 
 /**
@@ -651,6 +700,109 @@ export function calcSearchTermAnalysis(searchTermRows: StandardRow[]): SearchTer
   const totalClicks = aggregates.reduce((s, a) => s + a.totalClicks, 0);
   const avgCvr = totalClicks > 0 ? totalOrders / totalClicks : null;
 
+  // ============================================================
+  // 词根分析：提取每个搜索词的首词作为词根，按词根聚合
+  // ============================================================
+  const rootMap = new Map<string, {
+    terms: Map<string, number>; // term -> spend
+    impressions: number; clicks: number; spend: number; orders: number; sales: number;
+  }>();
+
+  for (const agg of aggregates) {
+    const words = agg.searchTerm.split(/\s+/).filter(Boolean);
+    if (words.length === 0) continue;
+    // 词根策略：单词直接用该词；多词取前两词组合作为词根
+    const root = words.length === 1 ? words[0] : words.slice(0, 2).join(" ");
+    if (!rootMap.has(root)) {
+      rootMap.set(root, { terms: new Map(), impressions: 0, clicks: 0, spend: 0, orders: 0, sales: 0 });
+    }
+    const re = rootMap.get(root)!;
+    re.terms.set(agg.searchTerm, agg.totalSpend);
+    re.impressions += agg.totalImpressions;
+    re.clicks += agg.totalClicks;
+    re.spend += agg.totalSpend;
+    re.orders += agg.totalOrders;
+    re.sales += agg.totalSales;
+  }
+
+  const wordRootAnalysis: WordRootAggregate[] = Array.from(rootMap.entries())
+    .filter(([, v]) => v.terms.size >= 2) // 至少包含2个搜索词的词根才展示
+    .map(([root, v]) => {
+      const acos = v.sales > 0 ? v.spend / v.sales : null;
+      const cvr = v.clicks > 0 ? v.orders / v.clicks : null;
+      const ctr = v.impressions > 0 ? v.clicks / v.impressions : null;
+      const topTerms = Array.from(v.terms.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([t]) => t);
+      // 词根标签判断
+      let label: WordRootAggregate["label"] = "normal";
+      if (v.orders >= 5 && acos !== null && acos < THRESHOLDS.acos.excellent) label = "high_value";
+      else if (v.spend > 20 && acos !== null && acos > THRESHOLDS.acos.danger) label = "loss";
+      else if (v.clicks >= 50 && v.orders === 0) label = "invalid";
+      else if (v.impressions >= 2000 && v.clicks < 20) label = "potential";
+      return { root, termCount: v.terms.size, totalImpressions: v.impressions, totalClicks: v.clicks, totalSpend: v.spend, totalOrders: v.orders, totalSales: v.sales, acos, cvr, ctr, topTerms, label };
+    })
+    .sort((a, b) => b.totalSpend - a.totalSpend)
+    .slice(0, 200);
+
+  // ============================================================
+  // 匹配类型维度分析
+  // ============================================================
+  const matchTypeMap = new Map<string, {
+    terms: Set<string>; impressions: number; clicks: number; spend: number; orders: number; sales: number;
+  }>();
+
+  for (const row of searchTermRows) {
+    const mt = (row.match_type ?? "UNKNOWN").toUpperCase();
+    const term = (row.search_term ?? "").trim().toLowerCase();
+    if (!matchTypeMap.has(mt)) {
+      matchTypeMap.set(mt, { terms: new Set(), impressions: 0, clicks: 0, spend: 0, orders: 0, sales: 0 });
+    }
+    const me = matchTypeMap.get(mt)!;
+    if (term) me.terms.add(term);
+    me.impressions += row.impressions ?? 0;
+    me.clicks += row.clicks ?? 0;
+    me.spend += row.spend ?? 0;
+    me.orders += row.orders ?? 0;
+    me.sales += row.ad_sales ?? 0;
+  }
+
+  const matchTypeTotalSpend = Array.from(matchTypeMap.values()).reduce((s, v) => s + v.spend, 0);
+  const matchTypeAnalysis: MatchTypeAnalysis[] = Array.from(matchTypeMap.entries())
+    .map(([matchType, v]) => ({
+      matchType,
+      termCount: v.terms.size,
+      totalImpressions: v.impressions,
+      totalClicks: v.clicks,
+      totalSpend: v.spend,
+      totalOrders: v.orders,
+      totalSales: v.sales,
+      acos: v.sales > 0 ? v.spend / v.sales : null,
+      cvr: v.clicks > 0 ? v.orders / v.clicks : null,
+      ctr: v.impressions > 0 ? v.clicks / v.impressions : null,
+      cpc: v.clicks > 0 ? v.spend / v.clicks : null,
+      spendShare: matchTypeTotalSpend > 0 ? v.spend / matchTypeTotalSpend : 0,
+    }))
+    .sort((a, b) => b.totalSpend - a.totalSpend);
+
+  // ============================================================
+  // 二维散点图数据：花费 vs CVR（只取有点击的词）
+  // ============================================================
+  const scatterData: ScatterPoint[] = aggregates
+    .filter(a => a.totalClicks >= 3 && a.cvr !== null)
+    .map(a => ({
+      searchTerm: a.searchTerm,
+      spend: a.totalSpend,
+      cvr: a.cvr!,
+      orders: a.totalOrders,
+      acos: a.acos,
+      label: a.label,
+      wordCategory: a.wordCategory,
+    }))
+    .sort((a, b) => b.spend - a.spend)
+    .slice(0, 500); // 最多500个点避免前端卡顿
+
   return {
     totalTerms: searchTermRows.length,
     uniqueTerms: termMap.size,
@@ -666,6 +818,9 @@ export function calcSearchTermAnalysis(searchTermRows: StandardRow[]): SearchTer
     categoryDistribution,
     topTermsBySpend,
     ownerTermStats,
+    wordRootAnalysis,
+    matchTypeAnalysis,
+    scatterData,
   };
 }
 

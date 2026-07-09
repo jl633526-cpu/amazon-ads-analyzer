@@ -1,40 +1,30 @@
-import { useState } from "react";
-import { formatCurrency, formatPercent, formatNumber } from "@/lib/utils";
+import { useState, useMemo } from "react";
 import {
-  XCircle, Target, TrendingUp, Copy, Search, AlertTriangle,
-  Star, TrendingDown, Eye, BarChart2, Users, ChevronDown, ChevronUp
+  Search, Star, TrendingDown, XCircle, Eye, DollarSign,
+  MinusCircle, ArrowRight, ArrowUpRight, Users, ChevronDown,
+  ChevronRight, Copy, Check, GitBranch, Layers,
+  BarChart2,
 } from "lucide-react";
-import { toast } from "sonner";
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import {
+  ScatterChart as ReScatterChart,
+  Scatter,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as ReTooltip,
+  ResponsiveContainer,
+  Cell,
+  PieChart,
+  Pie,
+  BarChart,
+  Bar,
+} from "recharts";
 
 // ============================================================
 // 类型定义
 // ============================================================
-interface SearchTermItem {
-  searchTerm: string;
-  campaignName: string;
-  ownerName: string;
-  spend: number;
-  clicks: number;
-  orders: number;
-  acos: number | null;
-  cvr: number | null;
-  reason: string;
-  action?: string;
-  negateType?: string;
-  matchType?: string;
-}
-
-interface SearchTermLists {
-  negativeKeywords?: SearchTermItem[];
-  exactMatchConversions?: SearchTermItem[];
-  scaleUpTerms?: SearchTermItem[];
-  negateList?: SearchTermItem[];
-  toExactList?: SearchTermItem[];
-  amplifyList?: SearchTermItem[];
-}
-
 type WordCategory = "brand" | "competitor" | "functional" | "longtail" | "generic";
+type TermLabel = "high_value" | "loss" | "invalid" | "potential" | "normal";
 
 interface SearchTermAggregate {
   searchTerm: string;
@@ -52,8 +42,48 @@ interface SearchTermAggregate {
   campaigns: string[];
   matchTypes: string[];
   ownerNames: string[];
-  label: "high_value" | "loss" | "invalid" | "potential" | "normal";
+  label: TermLabel;
   labelReason: string;
+}
+
+interface WordRootAggregate {
+  root: string;
+  termCount: number;
+  totalImpressions: number;
+  totalClicks: number;
+  totalSpend: number;
+  totalOrders: number;
+  totalSales: number;
+  acos: number | null;
+  cvr: number | null;
+  ctr: number | null;
+  topTerms: string[];
+  label: TermLabel;
+}
+
+interface MatchTypeAnalysis {
+  matchType: string;
+  termCount: number;
+  totalImpressions: number;
+  totalClicks: number;
+  totalSpend: number;
+  totalOrders: number;
+  totalSales: number;
+  acos: number | null;
+  cvr: number | null;
+  ctr: number | null;
+  cpc: number | null;
+  spendShare: number;
+}
+
+interface ScatterPoint {
+  searchTerm: string;
+  spend: number;
+  cvr: number;
+  orders: number;
+  acos: number | null;
+  label: string;
+  wordCategory: WordCategory;
 }
 
 interface SearchTermAnalysis {
@@ -71,360 +101,190 @@ interface SearchTermAnalysis {
   categoryDistribution: Record<WordCategory, { count: number; spend: number; orders: number }>;
   topTermsBySpend: SearchTermAggregate[];
   ownerTermStats: Array<{
-    ownerName: string;
-    ownerCode: string;
-    termCount: number;
-    spend: number;
-    orders: number;
-    acos: number | null;
-    highValueCount: number;
-    invalidCount: number;
+    ownerName: string; ownerCode: string; termCount: number;
+    spend: number; orders: number; acos: number | null;
+    highValueCount: number; invalidCount: number;
   }>;
+  wordRootAnalysis?: WordRootAggregate[];
+  matchTypeAnalysis?: MatchTypeAnalysis[];
+  scatterData?: ScatterPoint[];
+}
+
+interface SearchTermItem {
+  searchTerm: string;
+  campaignName: string;
+  adGroupName?: string;
+  targeting?: string;
+  matchType?: string;
+  ownerCode?: string;
+  ownerName: string;
+  clicks?: number;
+  spend?: number;
+  orders?: number;
+  acos?: number;
+  reason: string;
+}
+
+interface SearchTermLists {
+  negateList?: SearchTermItem[];
+  toExactList?: SearchTermItem[];
+  amplifyList?: SearchTermItem[];
+  [key: string]: SearchTermItem[] | undefined;
 }
 
 interface Props {
-  data: SearchTermLists;
-  analysis?: SearchTermAnalysis;
+  data: SearchTermLists | null;
+  analysis?: SearchTermAnalysis | null;
   ownerFilter?: string;
   ownerName?: string;
 }
 
 // ============================================================
-// 工具函数
+// 格式化
 // ============================================================
-const CATEGORY_LABELS: Record<WordCategory, string> = {
-  brand: "品牌词",
-  competitor: "竞品词",
-  functional: "功能词",
-  longtail: "长尾词",
-  generic: "泛求词",
-};
-
-const CATEGORY_COLORS: Record<WordCategory, string> = {
-  brand: "#6366f1",
-  competitor: "#f43f5e",
-  functional: "#10b981",
-  longtail: "#f59e0b",
-  generic: "#64748b",
-};
-
-const LABEL_CONFIG = {
-  high_value: { label: "高价值", color: "text-emerald-400", bg: "bg-emerald-400/10", border: "border-emerald-400/20", icon: Star },
-  loss: { label: "亏损词", color: "text-red-400", bg: "bg-red-400/10", border: "border-red-400/20", icon: TrendingDown },
-  invalid: { label: "无效词", color: "text-orange-400", bg: "bg-orange-400/10", border: "border-orange-400/20", icon: XCircle },
-  potential: { label: "潜力词", color: "text-blue-400", bg: "bg-blue-400/10", border: "border-blue-400/20", icon: Eye },
-  normal: { label: "正常", color: "text-muted-foreground", bg: "bg-muted/30", border: "border-border/30", icon: BarChart2 },
-};
-
-function copyToClipboard(text: string) {
-  navigator.clipboard.writeText(text).then(() => {
-    toast.success("已复制到剪贴板");
-  });
-}
+const pct = (v: number | null | undefined) => v == null ? "—" : `${(v * 100).toFixed(1)}%`;
+const usd = (v: number | null | undefined) => v == null ? "—" : `$${v.toFixed(2)}`;
+const num = (v: number | null | undefined) => v == null ? "—" : v.toLocaleString();
 
 // ============================================================
-// 子组件：搜索词聚合表格
+// 配置
 // ============================================================
-function AggregateTable({
-  terms,
-  title,
-  emptyText,
-  ownerName,
-}: {
-  terms: SearchTermAggregate[];
-  title: string;
-  emptyText: string;
-  ownerName?: string;
-}) {
-  const [search, setSearch] = useState("");
-  const [expandedRow, setExpandedRow] = useState<string | null>(null);
+const LABEL_CONFIG: Record<TermLabel, { color: string; bg: string; text: string }> = {
+  high_value: { color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20", text: "高价值" },
+  loss:       { color: "text-red-400",     bg: "bg-red-500/10 border-red-500/20",         text: "亏损" },
+  invalid:    { color: "text-orange-400",  bg: "bg-orange-500/10 border-orange-500/20",   text: "无效" },
+  potential:  { color: "text-blue-400",    bg: "bg-blue-500/10 border-blue-500/20",       text: "潜力" },
+  normal:     { color: "text-slate-400",   bg: "bg-slate-500/10 border-slate-500/20",     text: "普通" },
+};
 
-  const filtered = terms.filter((t) => {
-    const matchOwner = !ownerName || t.ownerNames.includes(ownerName);
-    const matchSearch = !search || t.searchTerm.toLowerCase().includes(search.toLowerCase());
-    return matchOwner && matchSearch;
-  });
+const CATEGORY_CONFIG: Record<WordCategory, { label: string; color: string }> = {
+  brand:      { label: "品牌词", color: "#6366f1" },
+  competitor: { label: "竞品词", color: "#f43f5e" },
+  functional: { label: "功能词", color: "#0ea5e9" },
+  longtail:   { label: "长尾词", color: "#10b981" },
+  generic:    { label: "泛求词", color: "#f59e0b" },
+};
 
-  if (filtered.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-        <Search className="h-8 w-8 mb-3 opacity-40" />
-        <p className="text-sm">{emptyText}</p>
-      </div>
-    );
-  }
+const SCATTER_COLORS: Record<string, string> = {
+  high_value: "#10b981", loss: "#f43f5e", invalid: "#f59e0b", potential: "#6366f1", normal: "#64748b",
+};
+
+const MATCH_COLORS: Record<string, string> = {
+  BROAD: "#6366f1", PHRASE: "#0ea5e9", EXACT: "#10b981",
+  TARGETING_EXPRESSION: "#f59e0b", TARGETING_EXPRESSION_PREDEFINED: "#f43f5e", UNKNOWN: "#64748b",
+};
+
+// ============================================================
+// 子组件：可展开词行
+// ============================================================
+function TermRow({ agg, rank }: { agg: SearchTermAggregate; rank?: number }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const cfg = LABEL_CONFIG[agg.label];
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜索词过滤..."
-            className="w-full pl-9 pr-3 py-1.5 text-xs bg-muted/30 border border-border/40 rounded-lg focus:outline-none focus:border-primary/50 focus:bg-muted/50 transition-all"
-          />
+    <div className="border border-border/30 rounded-lg overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/20 transition-colors" onClick={() => setOpen(v => !v)}>
+        {rank != null && <span className="text-xs text-muted-foreground w-6 text-center font-mono">{rank}</span>}
+        <span className={`text-xs px-2 py-0.5 rounded border font-medium flex-shrink-0 ${cfg.bg} ${cfg.color}`}>{cfg.text}</span>
+        <span className="flex-1 text-sm font-medium truncate">{agg.searchTerm}</span>
+        <span className="text-xs text-muted-foreground hidden sm:block flex-shrink-0">{CATEGORY_CONFIG[agg.wordCategory]?.label}</span>
+        <div className="flex items-center gap-4 text-xs text-muted-foreground flex-shrink-0">
+          <span>花费 <strong className="text-foreground">{usd(agg.totalSpend)}</strong></span>
+          <span>订单 <strong className="text-foreground">{agg.totalOrders}</strong></span>
+          <span>ACOS <strong className={agg.acos && agg.acos > 0.5 ? "text-red-400" : "text-emerald-400"}>{pct(agg.acos)}</strong></span>
+          <span className="hidden md:inline">CVR <strong className="text-foreground">{pct(agg.cvr)}</strong></span>
         </div>
-        <button
-          onClick={() => copyToClipboard(filtered.map((t) => t.searchTerm).join("\n"))}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground border border-border/40 rounded-lg hover:border-border/70 transition-all"
-        >
-          <Copy className="h-3 w-3" />
-          复制全部词
+        <button onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(agg.searchTerm).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }); }} className="p-1 rounded hover:bg-muted/40 text-muted-foreground flex-shrink-0">
+          {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
         </button>
-        <span className="text-xs text-muted-foreground">{filtered.length} 条</span>
+        {open ? <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />}
       </div>
-
-      <div className="overflow-x-auto rounded-lg border border-border/30">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-border/30 bg-muted/20">
-              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[200px]">搜索词</th>
-              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">词性</th>
-              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">曝光</th>
-              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">点击</th>
-              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">花费</th>
-              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">订单</th>
-              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">ACOS</th>
-              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">CVR</th>
-              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">Campaign数</th>
-              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">标签</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((term) => {
-              const labelCfg = LABEL_CONFIG[term.label];
-              const isExpanded = expandedRow === term.searchTerm;
-              return (
-                <>
-                  <tr
-                    key={term.searchTerm}
-                    className="border-b border-border/20 hover:bg-muted/20 transition-colors cursor-pointer"
-                    onClick={() => setExpandedRow(isExpanded ? null : term.searchTerm)}
-                  >
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-1.5">
-                        {isExpanded ? <ChevronUp className="h-3 w-3 text-muted-foreground flex-shrink-0" /> : <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
-                        <span className="font-mono text-foreground/90 truncate max-w-[160px]" title={term.searchTerm}>
-                          {term.searchTerm}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
-                        style={{ background: CATEGORY_COLORS[term.wordCategory] + "22", color: CATEGORY_COLORS[term.wordCategory] }}>
-                        {CATEGORY_LABELS[term.wordCategory]}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 text-right text-muted-foreground">{formatNumber(term.totalImpressions)}</td>
-                    <td className="px-3 py-2.5 text-right text-muted-foreground">{formatNumber(term.totalClicks)}</td>
-                    <td className="px-3 py-2.5 text-right font-medium">{formatCurrency(term.totalSpend)}</td>
-                    <td className="px-3 py-2.5 text-right font-medium">{term.totalOrders}</td>
-                    <td className="px-3 py-2.5 text-right">
-                      {term.acos !== null ? (
-                        <span className={term.acos > 1 ? "text-red-400" : term.acos > 0.7 ? "text-yellow-400" : "text-emerald-400"}>
-                          {formatPercent(term.acos)}
-                        </span>
-                      ) : <span className="text-muted-foreground">—</span>}
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      {term.cvr !== null ? formatPercent(term.cvr) : <span className="text-muted-foreground">—</span>}
-                    </td>
-                    <td className="px-3 py-2.5 text-muted-foreground">{term.campaignCount}</td>
-                    <td className="px-3 py-2.5">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${labelCfg.bg} ${labelCfg.color} ${labelCfg.border}`}>
-                        {labelCfg.label}
-                      </span>
-                    </td>
-                  </tr>
-                  {isExpanded && (
-                    <tr key={`${term.searchTerm}-detail`} className="bg-muted/10 border-b border-border/20">
-                      <td colSpan={10} className="px-6 py-3">
-                        <div className="grid grid-cols-3 gap-4 text-xs">
-                          <div>
-                            <p className="text-muted-foreground mb-1 font-medium">关联 Campaign</p>
-                            <div className="space-y-0.5">
-                              {term.campaigns.slice(0, 3).map((c) => (
-                                <p key={c} className="text-foreground/80 truncate" title={c}>{c}</p>
-                              ))}
-                              {term.campaigns.length > 3 && <p className="text-muted-foreground">...还有 {term.campaigns.length - 3} 个</p>}
-                            </div>
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground mb-1 font-medium">匹配类型</p>
-                            <div className="flex flex-wrap gap-1">
-                              {term.matchTypes.map((m) => (
-                                <span key={m} className="px-1.5 py-0.5 bg-primary/10 text-primary rounded text-[10px]">{m}</span>
-                              ))}
-                            </div>
-                            <p className="text-muted-foreground mt-2 mb-1 font-medium">负责人</p>
-                            <p className="text-foreground/80">{term.ownerNames.join("、") || "未识别"}</p>
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground mb-1 font-medium">诊断原因</p>
-                            <p className="text-foreground/80">{term.labelReason || "正常表现"}</p>
-                            <div className="mt-2 grid grid-cols-2 gap-2">
-                              <div>
-                                <p className="text-muted-foreground text-[10px]">CTR</p>
-                                <p className="font-medium">{term.ctr !== null ? formatPercent(term.ctr) : "—"}</p>
-                              </div>
-                              <div>
-                                <p className="text-muted-foreground text-[10px]">CPC</p>
-                                <p className="font-medium">{term.cpc !== null ? formatCurrency(term.cpc) : "—"}</p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      {open && (
+        <div className="px-4 pb-4 pt-2 bg-muted/10 border-t border-border/20 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div><div className="text-xs text-muted-foreground mb-1">曝光</div><div className="text-sm font-medium">{num(agg.totalImpressions)}</div></div>
+          <div><div className="text-xs text-muted-foreground mb-1">点击</div><div className="text-sm font-medium">{num(agg.totalClicks)}</div></div>
+          <div><div className="text-xs text-muted-foreground mb-1">CTR</div><div className="text-sm font-medium">{pct(agg.ctr)}</div></div>
+          <div><div className="text-xs text-muted-foreground mb-1">CPC</div><div className="text-sm font-medium">{usd(agg.cpc)}</div></div>
+          {agg.labelReason && (
+            <div className="col-span-2 sm:col-span-4"><div className="text-xs text-muted-foreground mb-1">诊断原因</div><div className="text-sm text-amber-400">{agg.labelReason}</div></div>
+          )}
+          {agg.campaigns.length > 0 && (
+            <div className="col-span-2 sm:col-span-4">
+              <div className="text-xs text-muted-foreground mb-1">关联Campaign（{agg.campaignCount}个）</div>
+              <div className="flex flex-wrap gap-1">{agg.campaigns.map((c, i) => <span key={i} className="text-xs bg-muted/40 rounded px-2 py-0.5 truncate max-w-[200px]">{c}</span>)}</div>
+            </div>
+          )}
+          {agg.matchTypes.length > 0 && (
+            <div className="col-span-2 sm:col-span-4">
+              <div className="text-xs text-muted-foreground mb-1">匹配类型</div>
+              <div className="flex gap-1">{agg.matchTypes.map((m, i) => <span key={i} className="text-xs bg-primary/10 text-primary rounded px-2 py-0.5">{m}</span>)}</div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 // ============================================================
-// 子组件：词性分布图
+// 子组件：词根行
 // ============================================================
-function CategoryDistributionChart({
-  distribution,
-}: {
-  distribution: Record<WordCategory, { count: number; spend: number; orders: number }>;
-}) {
-  const data = (Object.entries(distribution) as [WordCategory, { count: number; spend: number; orders: number }][])
-    .filter(([, v]) => v.count > 0)
-    .map(([cat, v]) => ({
-      name: CATEGORY_LABELS[cat],
-      value: v.count,
-      spend: v.spend,
-      orders: v.orders,
-      color: CATEGORY_COLORS[cat],
-    }));
-
-  if (data.length === 0) return null;
-
+function RootRow({ root, rank }: { root: WordRootAggregate; rank: number }) {
+  const [open, setOpen] = useState(false);
+  const cfg = LABEL_CONFIG[root.label];
   return (
-    <div className="grid grid-cols-2 gap-4">
-      <div className="h-[200px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie data={data} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={2}>
-              {data.map((entry, i) => (
-                <Cell key={i} fill={entry.color} />
-              ))}
-            </Pie>
-            <Tooltip
-              formatter={(value: number, name: string) => [`${value} 词`, name]}
-              contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }}
-            />
-            <Legend iconType="circle" iconSize={8} formatter={(v) => <span style={{ fontSize: 11 }}>{v}</span>} />
-          </PieChart>
-        </ResponsiveContainer>
+    <div className="border border-border/30 rounded-lg overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/20 transition-colors" onClick={() => setOpen(v => !v)}>
+        <span className="text-xs text-muted-foreground w-6 text-center font-mono">{rank}</span>
+        <span className={`text-xs px-2 py-0.5 rounded border font-medium flex-shrink-0 ${cfg.bg} ${cfg.color}`}>{cfg.text}</span>
+        <span className="flex-1 text-sm font-semibold">{root.root}</span>
+        <span className="text-xs text-muted-foreground hidden sm:inline flex-shrink-0">{root.termCount} 个搜索词</span>
+        <div className="flex items-center gap-4 text-xs text-muted-foreground flex-shrink-0">
+          <span>花费 <strong className="text-foreground">{usd(root.totalSpend)}</strong></span>
+          <span>订单 <strong className="text-foreground">{root.totalOrders}</strong></span>
+          <span>ACOS <strong className={root.acos && root.acos > 0.5 ? "text-red-400" : "text-emerald-400"}>{pct(root.acos)}</strong></span>
+        </div>
+        {open ? <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />}
       </div>
-      <div className="space-y-2 self-center">
-        {data.map((d) => (
-          <div key={d.name} className="flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: d.color }} />
-              <span className="text-muted-foreground">{d.name}</span>
-            </div>
-            <div className="flex gap-4 text-right">
-              <span className="text-foreground font-medium w-12">{d.value} 词</span>
-              <span className="text-muted-foreground w-16">{formatCurrency(d.spend)}</span>
-              <span className="text-muted-foreground w-10">{d.orders} 单</span>
-            </div>
+      {open && (
+        <div className="px-4 pb-4 pt-2 bg-muted/10 border-t border-border/20">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+            <div><div className="text-xs text-muted-foreground mb-1">曝光</div><div className="text-sm font-medium">{num(root.totalImpressions)}</div></div>
+            <div><div className="text-xs text-muted-foreground mb-1">点击</div><div className="text-sm font-medium">{num(root.totalClicks)}</div></div>
+            <div><div className="text-xs text-muted-foreground mb-1">CVR</div><div className="text-sm font-medium">{pct(root.cvr)}</div></div>
+            <div><div className="text-xs text-muted-foreground mb-1">CTR</div><div className="text-sm font-medium">{pct(root.ctr)}</div></div>
           </div>
-        ))}
-      </div>
+          <div className="text-xs text-muted-foreground mb-1">花费最高的子词</div>
+          <div className="flex flex-wrap gap-1">{root.topTerms.map((t, i) => <span key={i} className="text-xs bg-muted/40 rounded px-2 py-0.5">{t}</span>)}</div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ============================================================
-// 子组件：旧版三清单（否词/转精准/放大）
+// 子组件：操作清单行
 // ============================================================
-function LegacyListTab({
-  items,
-  emptyText,
-  ownerName,
-  actionLabel,
-}: {
-  items: SearchTermItem[];
-  emptyText: string;
-  ownerName?: string;
-  actionLabel: string;
-}) {
-  const filtered = ownerName ? items.filter((i) => i.ownerName === ownerName) : items;
-
-  if (filtered.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-        <Search className="h-8 w-8 mb-3 opacity-40" />
-        <p className="text-sm">{emptyText}</p>
-      </div>
-    );
-  }
-
+function ActionRow({ item }: { item: SearchTermItem }) {
+  const [copied, setCopied] = useState(false);
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">{filtered.length} 条建议</span>
-        <button
-          onClick={() => copyToClipboard(filtered.map((i) => i.searchTerm).join("\n"))}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground border border-border/40 rounded-lg hover:border-border/70 transition-all"
-        >
-          <Copy className="h-3 w-3" />
-          复制全部词
-        </button>
+    <div className="flex items-center gap-3 px-4 py-3 border border-border/30 rounded-lg hover:bg-muted/10 transition-colors">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-sm font-medium truncate">{item.searchTerm}</span>
+          <button onClick={() => navigator.clipboard.writeText(item.searchTerm).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); })} className="p-0.5 rounded hover:bg-muted/40 text-muted-foreground flex-shrink-0">
+            {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+          </button>
+        </div>
+        <div className="text-xs text-muted-foreground truncate">{item.campaignName}</div>
       </div>
-      <div className="overflow-x-auto rounded-lg border border-border/30">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-border/30 bg-muted/20">
-              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">搜索词</th>
-              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">Campaign</th>
-              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">负责人</th>
-              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">花费</th>
-              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">点击</th>
-              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">订单</th>
-              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">ACOS</th>
-              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">原因</th>
-              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">{actionLabel}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((item, i) => (
-              <tr key={i} className="border-b border-border/20 hover:bg-muted/20 transition-colors">
-                <td className="px-3 py-2.5 font-mono text-foreground/90 max-w-[160px] truncate" title={item.searchTerm}>
-                  {item.searchTerm}
-                </td>
-                <td className="px-3 py-2.5 text-muted-foreground max-w-[160px] truncate" title={item.campaignName}>
-                  {item.campaignName}
-                </td>
-                <td className="px-3 py-2.5 text-muted-foreground">{item.ownerName}</td>
-                <td className="px-3 py-2.5 text-right font-medium">{formatCurrency(item.spend)}</td>
-                <td className="px-3 py-2.5 text-right text-muted-foreground">{formatNumber(item.clicks)}</td>
-                <td className="px-3 py-2.5 text-right font-medium">{item.orders}</td>
-                <td className="px-3 py-2.5 text-right">
-                  {item.acos !== null ? (
-                    <span className={item.acos > 1 ? "text-red-400" : item.acos > 0.7 ? "text-yellow-400" : "text-emerald-400"}>
-                      {formatPercent(item.acos)}
-                    </span>
-                  ) : <span className="text-muted-foreground">—</span>}
-                </td>
-                <td className="px-3 py-2.5 text-muted-foreground max-w-[160px] truncate" title={item.reason}>{item.reason}</td>
-                <td className="px-3 py-2.5 text-primary max-w-[160px] truncate" title={item.action}>{item.action || "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="hidden sm:flex items-center gap-3 text-xs text-muted-foreground flex-shrink-0">
+        {item.clicks != null && <span>点击 {item.clicks}</span>}
+        {item.spend != null && <span>{usd(item.spend)}</span>}
+        {item.acos != null && <span>ACOS {pct(item.acos)}</span>}
       </div>
+      <span className="text-xs text-amber-400 max-w-[140px] text-right leading-tight flex-shrink-0">{item.reason}</span>
     </div>
   );
 }
@@ -432,241 +292,379 @@ function LegacyListTab({
 // ============================================================
 // 主组件
 // ============================================================
-export default function SearchTermTab({ data, analysis, ownerFilter, ownerName }: Props) {
-  const [activeTab, setActiveTab] = useState<
-    "overview" | "high_value" | "loss" | "invalid" | "potential" | "top_spend" | "negate" | "to_exact" | "amplify" | "owner_stats"
-  >("overview");
+export default function SearchTermTab({ data, analysis, ownerFilter: _ownerFilter, ownerName }: Props) {
+  const [activeTab, setActiveTab] = useState("overview");
+  const [rootSearch, setRootSearch] = useState("");
+  const [scatterCategory, setScatterCategory] = useState<WordCategory | "all">("all");
 
-  // 标准化旧版三清单
-  const negateList: SearchTermItem[] = (data?.negateList ?? data?.negativeKeywords ?? []).map((i) => ({
-    ...i,
-    cvr: i.cvr ?? (i.clicks > 0 ? i.orders / i.clicks : null),
-  }));
-  const toExactList: SearchTermItem[] = (data?.toExactList ?? data?.exactMatchConversions ?? []).map((i) => ({
-    ...i,
-    cvr: i.cvr ?? (i.clicks > 0 ? i.orders / i.clicks : null),
-  }));
-  const amplifyList: SearchTermItem[] = (data?.amplifyList ?? data?.scaleUpTerms ?? []).map((i) => ({
-    ...i,
-    cvr: i.cvr ?? (i.clicks > 0 ? i.orders / i.clicks : null),
-  }));
+  const filterByOwner = <T extends { ownerNames?: string[]; ownerName?: string }>(items: T[]): T[] => {
+    if (!ownerName || ownerName === "ALL") return items;
+    return items.filter(item => item.ownerNames?.includes(ownerName) || item.ownerName === ownerName);
+  };
 
-  const filteredNegate = ownerName ? negateList.filter((i) => i.ownerName === ownerName) : negateList;
-  const filteredToExact = ownerName ? toExactList.filter((i) => i.ownerName === ownerName) : toExactList;
-  const filteredAmplify = ownerName ? amplifyList.filter((i) => i.ownerName === ownerName) : amplifyList;
+  const normalizedData = useMemo(() => {
+    if (!data) return { negateList: [] as SearchTermItem[], toExactList: [] as SearchTermItem[], amplifyList: [] as SearchTermItem[] };
+    return {
+      negateList: (data.negateList ?? data.negate_list ?? []) as SearchTermItem[],
+      toExactList: (data.toExactList ?? data.to_exact_list ?? []) as SearchTermItem[],
+      amplifyList: (data.amplifyList ?? data.amplify_list ?? []) as SearchTermItem[],
+    };
+  }, [data]);
+
+  const negateFiltered = filterByOwner(normalizedData.negateList);
+  const toExactFiltered = filterByOwner(normalizedData.toExactList);
+  const amplifyFiltered = filterByOwner(normalizedData.amplifyList);
+
+  const scatterFiltered = useMemo(() => {
+    if (!analysis?.scatterData) return [];
+    return scatterCategory === "all" ? analysis.scatterData : analysis.scatterData.filter(p => p.wordCategory === scatterCategory);
+  }, [analysis?.scatterData, scatterCategory]);
+
+  const rootFiltered = useMemo(() => {
+    if (!analysis?.wordRootAnalysis) return [];
+    if (!rootSearch.trim()) return analysis.wordRootAnalysis;
+    const q = rootSearch.toLowerCase();
+    return analysis.wordRootAnalysis.filter(r => r.root.includes(q) || r.topTerms.some(t => t.includes(q)));
+  }, [analysis?.wordRootAnalysis, rootSearch]);
 
   const TABS = [
-    { id: "overview" as const, label: "搜索词概览", icon: BarChart2 },
-    { id: "high_value" as const, label: `高价值词 ${analysis?.highValueTerms?.length ?? 0}`, icon: Star },
-    { id: "loss" as const, label: `亏损词 ${analysis?.lossTerms?.length ?? 0}`, icon: TrendingDown },
-    { id: "invalid" as const, label: `无效词 ${analysis?.invalidTerms?.length ?? 0}`, icon: XCircle },
-    { id: "potential" as const, label: `潜力词 ${analysis?.potentialTerms?.length ?? 0}`, icon: Eye },
-    { id: "top_spend" as const, label: "花费TOP词", icon: BarChart2 },
-    { id: "negate" as const, label: `否词建议 ${filteredNegate.length}`, icon: XCircle },
-    { id: "to_exact" as const, label: `转精准 ${filteredToExact.length}`, icon: Target },
-    { id: "amplify" as const, label: `放大投放 ${filteredAmplify.length}`, icon: TrendingUp },
-    { id: "owner_stats" as const, label: "负责人词汇总", icon: Users },
+    { id: "overview",  label: "搜索词概览",  icon: Search,       count: analysis?.uniqueTerms },
+    { id: "scatter",   label: "二维分析",     icon: BarChart2,    count: scatterFiltered.length },
+    { id: "roots",     label: "词根分析",     icon: GitBranch,    count: analysis?.wordRootAnalysis?.length },
+    { id: "matchtype", label: "匹配类型",     icon: Layers,       count: analysis?.matchTypeAnalysis?.length },
+    { id: "highvalue", label: "高价值词",     icon: Star,         count: analysis?.highValueTerms?.length },
+    { id: "loss",      label: "亏损词",       icon: TrendingDown, count: analysis?.lossTerms?.length },
+    { id: "invalid",   label: "无效词",       icon: XCircle,      count: analysis?.invalidTerms?.length },
+    { id: "potential", label: "潜力词",       icon: Eye,          count: analysis?.potentialTerms?.length },
+    { id: "topspend",  label: "花费TOP词",    icon: DollarSign,   count: analysis?.topTermsBySpend?.length },
+    { id: "negate",    label: "否词建议",     icon: MinusCircle,  count: negateFiltered.length },
+    { id: "toexact",   label: "转精准",       icon: ArrowRight,   count: toExactFiltered.length },
+    { id: "amplify",   label: "放大投放",     icon: ArrowUpRight, count: amplifyFiltered.length },
+    { id: "owners",    label: "负责人词汇总", icon: Users,        count: analysis?.ownerTermStats?.length },
   ];
+
+  if (!analysis && !data) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+        <Search className="h-12 w-12 mb-4 opacity-30" />
+        <p className="text-sm">暂无搜索词数据，请上传 Search Term Report 后重新分析</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
-      {/* Tab导航 */}
-      <div className="flex flex-wrap gap-1.5 border-b border-border/30 pb-3">
-        {TABS.map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                activeTab === tab.id
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
-              }`}
-            >
-              <Icon className="h-3 w-3" />
-              {tab.label}
-            </button>
-          );
-        })}
+      {/* 二级 Tab 导航 */}
+      <div className="flex gap-0.5 overflow-x-auto pb-1 scrollbar-hide border-b border-border/30">
+        {TABS.map((tab) => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium whitespace-nowrap rounded-t transition-colors ${
+              activeTab === tab.id ? "bg-primary/10 text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/20"
+            }`}>
+            <tab.icon className="h-3.5 w-3.5" />
+            {tab.label}
+            {tab.count != null && (
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${activeTab === tab.id ? "bg-primary/20 text-primary" : "bg-muted/40 text-muted-foreground"}`}>
+                {tab.count}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
-      {/* 搜索词概览 */}
+      {/* ── 搜索词概览 ── */}
       {activeTab === "overview" && analysis && (
-        <div className="space-y-5">
-          {/* 核心指标卡片 */}
-          <div className="grid grid-cols-4 gap-3">
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: "搜索词总条数", value: formatNumber(analysis.totalTerms), sub: `去重 ${formatNumber(analysis.uniqueTerms)} 个` },
-              { label: "搜索词总花费", value: formatCurrency(analysis.totalSpend), sub: "来自Search Term报告" },
-              { label: "搜索词总订单", value: String(analysis.totalOrders), sub: "来自Search Term报告" },
-              { label: "搜索词平均ACOS", value: analysis.avgAcos !== null ? formatPercent(analysis.avgAcos) : "—", sub: analysis.avgCvr !== null ? `CVR ${formatPercent(analysis.avgCvr)}` : "" },
-            ].map((card) => (
-              <div key={card.label} className="rounded-xl border border-border/30 bg-card/50 p-4">
-                <p className="text-xs text-muted-foreground mb-1">{card.label}</p>
-                <p className="text-xl font-bold text-foreground">{card.value}</p>
-                {card.sub && <p className="text-xs text-muted-foreground mt-0.5">{card.sub}</p>}
+              { label: "搜索词总行数", value: num(analysis.totalTerms) },
+              { label: "去重词数", value: num(analysis.uniqueTerms) },
+              { label: "总花费", value: usd(analysis.totalSpend) },
+              { label: "总订单", value: num(analysis.totalOrders) },
+              { label: "总销售额", value: usd(analysis.totalSales) },
+              { label: "平均ACOS", value: pct(analysis.avgAcos) },
+              { label: "平均CVR", value: pct(analysis.avgCvr) },
+              { label: "高价值词数", value: String(analysis.highValueTerms?.length ?? 0) },
+            ].map((item) => (
+              <div key={item.label} className="bg-card border border-border/30 rounded-xl p-4">
+                <div className="text-xs text-muted-foreground mb-1">{item.label}</div>
+                <div className="text-xl font-bold">{item.value}</div>
               </div>
             ))}
           </div>
-
-          {/* 词性分布 */}
-          <div className="rounded-xl border border-border/30 bg-card/50 p-5">
-            <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-              <BarChart2 className="h-4 w-4 text-primary" />
-              词性分布
-            </h3>
-            <CategoryDistributionChart distribution={analysis.categoryDistribution} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="bg-card border border-border/30 rounded-xl p-4">
+              <h3 className="text-sm font-semibold mb-4 flex items-center gap-2"><BarChart2 className="h-4 w-4 text-primary" />词性分布（按花费）</h3>
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie data={Object.entries(analysis.categoryDistribution).map(([k, v]) => ({ name: CATEGORY_CONFIG[k as WordCategory]?.label ?? k, value: Math.round(v.spend * 100) / 100, fill: CATEGORY_CONFIG[k as WordCategory]?.color ?? "#64748b" }))} cx="50%" cy="50%" outerRadius={75} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                    {Object.entries(analysis.categoryDistribution).map(([k]) => <Cell key={k} fill={CATEGORY_CONFIG[k as WordCategory]?.color ?? "#64748b"} />)}
+                  </Pie>
+                  <ReTooltip contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8 }} formatter={(v: number) => [`$${v.toFixed(2)}`, "花费"]} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="bg-card border border-border/30 rounded-xl p-4">
+              <h3 className="text-sm font-semibold mb-4 flex items-center gap-2"><BarChart2 className="h-4 w-4 text-primary" />词标签分布</h3>
+              <div className="space-y-3">
+                {(["high_value", "loss", "invalid", "potential"] as TermLabel[]).map((lbl) => {
+                  const counts: Record<string, number> = { high_value: analysis.highValueTerms?.length ?? 0, loss: analysis.lossTerms?.length ?? 0, invalid: analysis.invalidTerms?.length ?? 0, potential: analysis.potentialTerms?.length ?? 0 };
+                  const total = Math.max(analysis.uniqueTerms || 1, 1);
+                  const cfg = LABEL_CONFIG[lbl];
+                  return (
+                    <div key={lbl} className="flex items-center gap-2">
+                      <span className={`text-xs w-14 text-right flex-shrink-0 ${cfg.color}`}>{cfg.text}</span>
+                      <div className="flex-1 bg-muted/30 rounded-full h-2">
+                        <div className="h-2 rounded-full transition-all" style={{ width: `${Math.min(100, (counts[lbl] / total) * 100)}%`, background: lbl === "high_value" ? "#10b981" : lbl === "loss" ? "#f43f5e" : lbl === "invalid" ? "#f59e0b" : "#6366f1" }} />
+                      </div>
+                      <span className="text-xs text-muted-foreground w-8 text-right flex-shrink-0">{counts[lbl]}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
+        </div>
+      )}
 
-          {/* 词标签分布 */}
-          <div className="grid grid-cols-4 gap-3">
-            {[
-              { key: "high_value" as const, count: analysis.highValueTerms.length, label: "高价值词", desc: "转化好、ACOS优" },
-              { key: "loss" as const, count: analysis.lossTerms.length, label: "亏损词", desc: "花费多、ACOS高" },
-              { key: "invalid" as const, count: analysis.invalidTerms.length, label: "无效词", desc: "点击多、无转化" },
-              { key: "potential" as const, count: analysis.potentialTerms.length, label: "潜力词", desc: "曝光多、点击少" },
-            ].map((item) => {
-              const cfg = LABEL_CONFIG[item.key];
-              const Icon = cfg.icon;
-              return (
-                <button
-                  key={item.key}
-                  onClick={() => setActiveTab(item.key)}
-                  className={`rounded-xl border p-4 text-left transition-all hover:scale-[1.01] ${cfg.bg} ${cfg.border}`}
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <Icon className={`h-4 w-4 ${cfg.color}`} />
-                    <span className={`text-sm font-semibold ${cfg.color}`}>{item.label}</span>
-                  </div>
-                  <p className={`text-2xl font-bold ${cfg.color}`}>{item.count}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{item.desc}</p>
+      {/* ── 二维散点分析 ── */}
+      {activeTab === "scatter" && (
+        <div className="space-y-4">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h3 className="text-sm font-semibold">花费 vs 转化率 散点图</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">气泡大小 = 订单数，颜色 = 词标签，仅展示点击≥3次的词</p>
+            </div>
+            <div className="flex gap-1 flex-wrap">
+              {(["all", "brand", "competitor", "functional", "longtail", "generic"] as const).map((cat) => (
+                <button key={cat} onClick={() => setScatterCategory(cat)}
+                  className={`text-xs px-2 py-1 rounded border transition-colors ${scatterCategory === cat ? "border-primary bg-primary/10 text-primary" : "border-border/30 text-muted-foreground hover:border-primary/30"}`}>
+                  {cat === "all" ? "全部" : CATEGORY_CONFIG[cat]?.label}
                 </button>
-              );
-            })}
+              ))}
+            </div>
+          </div>
+          <div className="bg-card border border-border/30 rounded-xl p-4">
+            {scatterFiltered.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-muted-foreground"><BarChart2 className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无散点数据（需要点击≥3次的搜索词）</p></div>
+            ) : (
+              <ResponsiveContainer width="100%" height={400}>
+                <ReScatterChart margin={{ top: 10, right: 20, bottom: 30, left: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  <XAxis dataKey="spend" name="花费" label={{ value: "花费 ($)", position: "insideBottom", offset: -15, fill: "#64748b", fontSize: 12 }} tick={{ fill: "#64748b", fontSize: 11 }} />
+                  <YAxis dataKey="cvr" name="CVR" tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} label={{ value: "CVR", angle: -90, position: "insideLeft", fill: "#64748b", fontSize: 12 }} tick={{ fill: "#64748b", fontSize: 11 }} />
+                  <ReTooltip
+                    contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, fontSize: 12 }}
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      const d = payload[0]?.payload as ScatterPoint;
+                      return (
+                        <div className="bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs space-y-1 max-w-[220px]">
+                          <div className="font-medium text-white truncate">{d.searchTerm}</div>
+                          <div className="text-slate-400">花费: <span className="text-white">{usd(d.spend)}</span></div>
+                          <div className="text-slate-400">CVR: <span className="text-white">{pct(d.cvr)}</span></div>
+                          <div className="text-slate-400">订单: <span className="text-white">{d.orders}</span></div>
+                          <div className="text-slate-400">ACOS: <span className="text-white">{pct(d.acos)}</span></div>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Scatter data={scatterFiltered}
+                    shape={(props: unknown) => {
+                      const { cx, cy, payload } = props as { cx: number; cy: number; payload: ScatterPoint };
+                      const r = Math.max(4, Math.min(20, Math.sqrt((payload.orders ?? 0) + 1) * 3));
+                      return <circle cx={cx} cy={cy} r={r} fill={SCATTER_COLORS[payload.label] ?? "#64748b"} fillOpacity={0.7} stroke={SCATTER_COLORS[payload.label] ?? "#64748b"} strokeWidth={1} />;
+                    }}
+                  />
+                </ReScatterChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {Object.entries(SCATTER_COLORS).map(([label, color]) => (
+              <div key={label} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <div className="w-3 h-3 rounded-full" style={{ background: color }} />
+                {LABEL_CONFIG[label as TermLabel]?.text ?? label}
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* 无analysis数据时的概览占位 */}
-      {activeTab === "overview" && !analysis && (
-        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-          <AlertTriangle className="h-10 w-10 mb-3 opacity-40" />
-          <p className="text-sm">需要上传 Search Term Report 才能显示搜索词深度分析</p>
+      {/* ── 词根分析 ── */}
+      {activeTab === "roots" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h3 className="text-sm font-semibold">词根聚合分析</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">按搜索词前两词提取词根，聚合旗下所有变体的表现（至少2个变体才展示）</p>
+            </div>
+            <input type="text" placeholder="搜索词根..." value={rootSearch} onChange={e => setRootSearch(e.target.value)}
+              className="text-sm bg-muted/30 border border-border/40 rounded-lg px-3 py-1.5 w-48 focus:outline-none focus:border-primary/50" />
+          </div>
+          {rootFiltered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground"><GitBranch className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无词根数据（需要至少2个同词根的搜索词）</p></div>
+          ) : (
+            <div className="space-y-2">{rootFiltered.map((root, i) => <RootRow key={root.root} root={root} rank={i + 1} />)}</div>
+          )}
         </div>
       )}
 
-      {/* 高价值词 */}
-      {activeTab === "high_value" && analysis && (
-        <AggregateTable
-          terms={analysis.highValueTerms}
-          title="高价值词"
-          emptyText="暂无高价值词（转化≥3单且ACOS<50%）"
-          ownerName={ownerName}
-        />
+      {/* ── 匹配类型分析 ── */}
+      {activeTab === "matchtype" && (
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold">匹配类型维度分析</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">对比 Broad / Phrase / Exact 各匹配类型的花费效率</p>
+          </div>
+          {!analysis?.matchTypeAnalysis?.length ? (
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground"><Layers className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无匹配类型数据</p></div>
+          ) : (
+            <>
+              <div className="bg-card border border-border/30 rounded-xl p-4">
+                <h4 className="text-xs font-medium text-muted-foreground mb-3">花费占比</h4>
+                <ResponsiveContainer width="100%" height={Math.max(120, analysis.matchTypeAnalysis.length * 40)}>
+                  <BarChart data={analysis.matchTypeAnalysis} layout="vertical" margin={{ left: 120, right: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
+                    <XAxis type="number" tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} tick={{ fill: "#64748b", fontSize: 11 }} />
+                    <YAxis type="category" dataKey="matchType" tick={{ fill: "#94a3b8", fontSize: 11 }} width={120} />
+                    <ReTooltip contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, fontSize: 12 }} formatter={(v: number) => [`${(v * 100).toFixed(1)}%`, "花费占比"]} />
+                    <Bar dataKey="spendShare" radius={[0, 4, 4, 0]}>
+                      {analysis.matchTypeAnalysis.map((entry) => <Cell key={entry.matchType} fill={MATCH_COLORS[entry.matchType] ?? "#6366f1"} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="bg-card border border-border/30 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border/30 bg-muted/20">
+                        {["匹配类型", "词数", "花费", "订单", "ACOS", "CVR", "CTR", "CPC", "花费占比"].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">{h}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {analysis.matchTypeAnalysis.map((mt) => (
+                        <tr key={mt.matchType} className="border-b border-border/20 hover:bg-muted/10 transition-colors">
+                          <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 rounded font-medium" style={{ background: `${MATCH_COLORS[mt.matchType] ?? "#6366f1"}20`, color: MATCH_COLORS[mt.matchType] ?? "#6366f1" }}>{mt.matchType}</span></td>
+                          <td className="px-4 py-3 text-muted-foreground">{num(mt.termCount)}</td>
+                          <td className="px-4 py-3 font-medium">{usd(mt.totalSpend)}</td>
+                          <td className="px-4 py-3">{num(mt.totalOrders)}</td>
+                          <td className={`px-4 py-3 font-medium ${mt.acos && mt.acos > 0.5 ? "text-red-400" : "text-emerald-400"}`}>{pct(mt.acos)}</td>
+                          <td className="px-4 py-3">{pct(mt.cvr)}</td>
+                          <td className="px-4 py-3">{pct(mt.ctr)}</td>
+                          <td className="px-4 py-3">{usd(mt.cpc)}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <div className="w-16 bg-muted/30 rounded-full h-1.5"><div className="h-1.5 rounded-full" style={{ width: `${mt.spendShare * 100}%`, background: MATCH_COLORS[mt.matchType] ?? "#6366f1" }} /></div>
+                              <span className="text-xs text-muted-foreground">{pct(mt.spendShare)}</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       )}
 
-      {/* 亏损词 */}
-      {activeTab === "loss" && analysis && (
-        <AggregateTable
-          terms={analysis.lossTerms}
-          title="亏损词"
-          emptyText="暂无亏损词（花费>$5且ACOS≥120%）"
-          ownerName={ownerName}
-        />
+      {/* ── 高价值词 ── */}
+      {activeTab === "highvalue" && (
+        <div className="space-y-2">
+          {!analysis?.highValueTerms?.length ? <div className="flex flex-col items-center py-16 text-muted-foreground"><Star className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无高价值词</p></div>
+            : filterByOwner(analysis.highValueTerms).map((a, i) => <TermRow key={a.searchTerm} agg={a} rank={i + 1} />)}
+        </div>
       )}
 
-      {/* 无效词 */}
-      {activeTab === "invalid" && analysis && (
-        <AggregateTable
-          terms={analysis.invalidTerms}
-          title="无效词"
-          emptyText="暂无无效词（点击>20且0单）"
-          ownerName={ownerName}
-        />
+      {/* ── 亏损词 ── */}
+      {activeTab === "loss" && (
+        <div className="space-y-2">
+          {!analysis?.lossTerms?.length ? <div className="flex flex-col items-center py-16 text-muted-foreground"><TrendingDown className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无亏损词</p></div>
+            : filterByOwner(analysis.lossTerms).map((a, i) => <TermRow key={a.searchTerm} agg={a} rank={i + 1} />)}
+        </div>
       )}
 
-      {/* 潜力词 */}
-      {activeTab === "potential" && analysis && (
-        <AggregateTable
-          terms={analysis.potentialTerms}
-          title="潜力词"
-          emptyText="暂无潜力词（曝光≥500且点击<5）"
-          ownerName={ownerName}
-        />
+      {/* ── 无效词 ── */}
+      {activeTab === "invalid" && (
+        <div className="space-y-2">
+          {!analysis?.invalidTerms?.length ? <div className="flex flex-col items-center py-16 text-muted-foreground"><XCircle className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无无效词</p></div>
+            : filterByOwner(analysis.invalidTerms).map((a, i) => <TermRow key={a.searchTerm} agg={a} rank={i + 1} />)}
+        </div>
       )}
 
-      {/* 花费TOP词 */}
-      {activeTab === "top_spend" && analysis && (
-        <AggregateTable
-          terms={analysis.topTermsBySpend}
-          title="花费TOP词"
-          emptyText="暂无数据"
-          ownerName={ownerName}
-        />
+      {/* ── 潜力词 ── */}
+      {activeTab === "potential" && (
+        <div className="space-y-2">
+          {!analysis?.potentialTerms?.length ? <div className="flex flex-col items-center py-16 text-muted-foreground"><Eye className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无潜力词</p></div>
+            : filterByOwner(analysis.potentialTerms).map((a, i) => <TermRow key={a.searchTerm} agg={a} rank={i + 1} />)}
+        </div>
       )}
 
-      {/* 否词建议 */}
+      {/* ── 花费TOP词 ── */}
+      {activeTab === "topspend" && (
+        <div className="space-y-2">
+          {!analysis?.topTermsBySpend?.length ? <div className="flex flex-col items-center py-16 text-muted-foreground"><DollarSign className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无数据</p></div>
+            : filterByOwner(analysis.topTermsBySpend).map((a, i) => <TermRow key={a.searchTerm} agg={a} rank={i + 1} />)}
+        </div>
+      )}
+
+      {/* ── 否词建议 ── */}
       {activeTab === "negate" && (
-        <LegacyListTab
-          items={filteredNegate}
-          emptyText="暂无否词建议（点击>20且0单）"
-          ownerName={undefined}
-          actionLabel="否词操作"
-        />
+        <div className="space-y-2">
+          {negateFiltered.length === 0 ? <div className="flex flex-col items-center py-16 text-muted-foreground"><MinusCircle className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无否词建议</p></div>
+            : negateFiltered.map((item, i) => <ActionRow key={i} item={item} />)}
+        </div>
       )}
 
-      {/* 转精准 */}
-      {activeTab === "to_exact" && (
-        <LegacyListTab
-          items={filteredToExact}
-          emptyText="暂无转精准建议（Broad/Phrase/Auto中高转化词）"
-          ownerName={undefined}
-          actionLabel="建议操作"
-        />
+      {/* ── 转精准 ── */}
+      {activeTab === "toexact" && (
+        <div className="space-y-2">
+          {toExactFiltered.length === 0 ? <div className="flex flex-col items-center py-16 text-muted-foreground"><ArrowRight className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无转精准建议</p></div>
+            : toExactFiltered.map((item, i) => <ActionRow key={i} item={item} />)}
+        </div>
       )}
 
-      {/* 放大投放 */}
+      {/* ── 放大投放 ── */}
       {activeTab === "amplify" && (
-        <LegacyListTab
-          items={filteredAmplify}
-          emptyText="暂无放大投放建议（精准词≥3单且ACOS<50%）"
-          ownerName={undefined}
-          actionLabel="建议操作"
-        />
+        <div className="space-y-2">
+          {amplifyFiltered.length === 0 ? <div className="flex flex-col items-center py-16 text-muted-foreground"><ArrowUpRight className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无放大投放建议</p></div>
+            : amplifyFiltered.map((item, i) => <ActionRow key={i} item={item} />)}
+        </div>
       )}
 
-      {/* 负责人词汇总 */}
-      {activeTab === "owner_stats" && analysis && (
+      {/* ── 负责人词汇总 ── */}
+      {activeTab === "owners" && (
         <div className="space-y-3">
-          <div className="overflow-x-auto rounded-lg border border-border/30">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border/30 bg-muted/20">
-                  <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">负责人</th>
-                  <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">搜索词数</th>
-                  <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">花费</th>
-                  <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">订单</th>
-                  <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">高价值词</th>
-                  <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">无效词</th>
-                </tr>
-              </thead>
-              <tbody>
-                {analysis.ownerTermStats
-                  .filter((s) => !ownerName || s.ownerName === ownerName)
-                  .map((s) => (
-                    <tr key={s.ownerCode} className="border-b border-border/20 hover:bg-muted/20 transition-colors">
-                      <td className="px-3 py-2.5 font-medium">{s.ownerName}</td>
-                      <td className="px-3 py-2.5 text-right">{formatNumber(s.termCount)}</td>
-                      <td className="px-3 py-2.5 text-right font-medium">{formatCurrency(s.spend)}</td>
-                      <td className="px-3 py-2.5 text-right">{s.orders}</td>
-                      <td className="px-3 py-2.5 text-right text-emerald-400 font-medium">{s.highValueCount}</td>
-                      <td className="px-3 py-2.5 text-right text-red-400 font-medium">{s.invalidCount}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
+          {!analysis?.ownerTermStats?.length ? <div className="flex flex-col items-center py-16 text-muted-foreground"><Users className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无负责人数据</p></div>
+            : (
+              <div className="bg-card border border-border/30 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border/30 bg-muted/20">
+                        {["负责人", "词数", "花费", "订单", "ACOS", "高价值词", "无效词"].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">{h}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {analysis.ownerTermStats.map((o) => (
+                        <tr key={o.ownerCode} className="border-b border-border/20 hover:bg-muted/10 transition-colors">
+                          <td className="px-4 py-3 font-medium">{o.ownerName}</td>
+                          <td className="px-4 py-3 text-muted-foreground">{num(o.termCount)}</td>
+                          <td className="px-4 py-3 font-medium">{usd(o.spend)}</td>
+                          <td className="px-4 py-3">{num(o.orders)}</td>
+                          <td className={`px-4 py-3 font-medium ${o.acos && o.acos > 0.5 ? "text-red-400" : "text-emerald-400"}`}>{pct(o.acos)}</td>
+                          <td className="px-4 py-3 text-emerald-400">{o.highValueCount}</td>
+                          <td className="px-4 py-3 text-orange-400">{o.invalidCount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
         </div>
       )}
     </div>
