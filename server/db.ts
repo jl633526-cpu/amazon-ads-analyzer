@@ -130,7 +130,7 @@ export async function getReportFilesByTaskId(taskId: number) {
 export async function saveAnalysisResult(taskId: number, result: Record<string, unknown>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.insert(analysisResults).values({
+  const values = {
     taskId,
     accountOverview: result.accountOverview as never,
     ownerAnalysis: result.ownerAnalysis as never,
@@ -140,6 +140,18 @@ export async function saveAnalysisResult(taskId: number, result: Record<string, 
     searchTermAnalysis: result.searchTermAnalysis as never,
     actionItems: result.actionItems as never,
     rawMetrics: result.rawMetrics as never,
+  };
+  await db.insert(analysisResults).values(values).onDuplicateKeyUpdate({
+    set: {
+      accountOverview: values.accountOverview,
+      ownerAnalysis: values.ownerAnalysis,
+      campaignSuggestions: values.campaignSuggestions,
+      targetingSuggestions: values.targetingSuggestions,
+      searchTermLists: values.searchTermLists,
+      searchTermAnalysis: values.searchTermAnalysis,
+      actionItems: values.actionItems,
+      rawMetrics: values.rawMetrics,
+    },
   });
 }
 
