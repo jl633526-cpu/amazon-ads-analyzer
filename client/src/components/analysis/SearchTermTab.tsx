@@ -170,8 +170,16 @@ const SCATTER_COLORS: Record<string, string> = {
 };
 
 const MATCH_COLORS: Record<string, string> = {
-  BROAD: "#6366f1", PHRASE: "#0ea5e9", EXACT: "#10b981",
-  TARGETING_EXPRESSION: "#f59e0b", TARGETING_EXPRESSION_PREDEFINED: "#f43f5e", UNKNOWN: "#64748b",
+  // 中文标准化 key（匹配截图颜色）
+  "广泛匹配": "#f59e0b",   // 橙色
+  "精确匹配": "#0ea5e9",   // 蓝色
+  "短语匹配": "#10b981",   // 绿色
+  "ASIN匹配":  "#94a3b8",   // 灰色
+  "自动匹配": "#a855f7",   // 紫色
+  // 英文兼容（旧数据防御）
+  BROAD: "#f59e0b", EXACT: "#0ea5e9", PHRASE: "#10b981",
+  TARGETING_EXPRESSION: "#94a3b8", TARGETING_EXPRESSION_PREDEFINED: "#94a3b8",
+  UNKNOWN: "#64748b", "未知": "#64748b",
 };
 
 // ============================================================

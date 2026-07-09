@@ -761,8 +761,19 @@ export function calcSearchTermAnalysis(searchTermRows: StandardRow[]): SearchTer
     terms: Set<string>; impressions: number; clicks: number; spend: number; orders: number; sales: number;
   }>();
 
+  // 匹配类型中文标准化
+  const normalizeMatchType = (raw: string | null | undefined): string => {
+    const v = (raw ?? "").toUpperCase().trim();
+    if (v === "BROAD") return "广泛匹配";
+    if (v === "EXACT") return "精确匹配";
+    if (v === "PHRASE") return "短语匹配";
+    if (v.startsWith("TARGETING_EXPRESSION") || v === "ASIN") return "ASIN匹配";
+    if (v === "AUTO") return "自动匹配";
+    return raw ?? "未知";
+  };
+
   for (const row of searchTermRows) {
-    const mt = (row.match_type ?? "UNKNOWN").toUpperCase();
+    const mt = normalizeMatchType(row.match_type);
     const term = (row.search_term ?? "").trim().toLowerCase();
     if (!matchTypeMap.has(mt)) {
       matchTypeMap.set(mt, { terms: new Set(), impressions: 0, clicks: 0, spend: 0, orders: 0, sales: 0 });
