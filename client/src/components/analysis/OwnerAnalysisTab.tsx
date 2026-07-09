@@ -149,12 +149,12 @@ export default function OwnerAnalysisTab({ data, ownerFilter = "ALL" }: Props) {
         <div className="p-4 border-b border-border/50">
           <h3 className="text-sm font-semibold text-foreground">负责人绩效详情</h3>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-220px)]">
           <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border/50 bg-muted/20">
+            <thead className="sticky top-0 z-10">
+              <tr className="border-b border-border/50">
                 {["排名", "负责人", "花费", "销售额", "ACOS", "ROAS", "CVR", "CTR", "CPC", "订单", "浪费率", "Campaign数"].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">
+                  <th key={h} className="px-4 py-3 text-left text-xs font-medium text-muted-foreground whitespace-nowrap bg-muted/40 backdrop-blur-sm">
                     {h}
                   </th>
                 ))}

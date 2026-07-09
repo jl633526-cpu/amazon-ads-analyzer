@@ -468,12 +468,12 @@ function MatchTypeTab({ analysis, ownerName }: { analysis?: SearchTermAnalysis |
             <span className="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded">已按负责人筛选</span>
           )}
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-220px)]">
           <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border/30 bg-muted/20">
+            <thead className="sticky top-0 z-10">
+              <tr className="border-b border-border/30">
                 {["匹配类型", "展示量", "点击量", "CTR", "花费", "销售额", "转化率", "ACOS", "ROAS", "花费占比"].map(h => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">{h}</th>
+                  <th key={h} className="px-4 py-3 text-left text-xs font-medium text-muted-foreground whitespace-nowrap bg-muted/40 backdrop-blur-sm">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -883,11 +883,11 @@ export default function SearchTermTab({ data, analysis, ownerFilter: _ownerFilte
           {!analysis?.ownerTermStats?.length ? <div className="flex flex-col items-center py-16 text-muted-foreground"><Users className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无负责人数据</p></div>
             : (
               <div className="bg-card border border-border/30 rounded-xl overflow-hidden">
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-220px)]">
                   <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border/30 bg-muted/20">
-                        {["负责人", "词数", "花费", "订单", "ACOS", "高价值词", "无效词"].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">{h}</th>)}
+                    <thead className="sticky top-0 z-10">
+                      <tr className="border-b border-border/30">
+                        {["负责人", "词数", "花费", "订单", "ACOS", "高价値词", "无效词"].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-medium text-muted-foreground bg-muted/40 backdrop-blur-sm">{h}</th>)}
                       </tr>
                     </thead>
                     <tbody>

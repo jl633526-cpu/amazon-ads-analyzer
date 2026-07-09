@@ -128,13 +128,13 @@ export default function ActionItemsTab({ data, onDownload, ownerFilter = "ALL", 
 
       {/* 清单表格 */}
       <div className="rounded-xl border border-border/50 bg-card overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-220px)]">
           <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border/50 bg-muted/20">
-                <th className="px-4 py-3 w-10"></th>
+            <thead className="sticky top-0 z-10">
+              <tr className="border-b border-border/50">
+                <th className="px-4 py-3 w-10 bg-muted/40 backdrop-blur-sm"></th>
                 {["#", "优先级", "类别", "负责人", "目标对象", "发现问题", "建议动作", "关键指标"].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">
+                  <th key={h} className="px-4 py-3 text-left text-xs font-medium text-muted-foreground whitespace-nowrap bg-muted/40 backdrop-blur-sm">
                     {h}
                   </th>
                 ))}
