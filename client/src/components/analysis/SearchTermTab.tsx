@@ -262,9 +262,24 @@ function TermRow({ agg, rank }: { agg: SearchTermAggregate; rank?: number }) {
 // ============================================================
 function MatchTypeTab({ analysis, ownerName }: { analysis?: SearchTermAnalysis | null; ownerName?: string }) {
   // 按负责人过滤匹配类型数据
-  const filteredMatchTypes = useMemo(() => {
-    if (!analysis?.matchTypeAnalysis?.length) return [];
-    if (!ownerName || ownerName === "ALL") return analysis.matchTypeAnalysis;
+  const { filteredMatchTypes, isOwnerFiltered, hasOwnerBreakdown } = useMemo(() => {
+    if (!analysis?.matchTypeAnalysis?.length) {
+      return { filteredMatchTypes: [] as MatchTypeAnalysis[], isOwnerFiltered: false, hasOwnerBreakdown: false };
+    }
+
+    const isFiltering = !!(ownerName && ownerName !== "ALL");
+
+    if (!isFiltering) {
+      return { filteredMatchTypes: analysis.matchTypeAnalysis, isOwnerFiltered: false, hasOwnerBreakdown: false };
+    }
+
+    // 检查是否有 ownerBreakdown 数据
+    const hasBreakdown = analysis.matchTypeAnalysis.some(mt => mt.ownerBreakdown && mt.ownerBreakdown.length > 0);
+
+    if (!hasBreakdown) {
+      // 降级回退：旧数据没有 ownerBreakdown，展示全量数据并提示重新分析
+      return { filteredMatchTypes: analysis.matchTypeAnalysis, isOwnerFiltered: false, hasOwnerBreakdown: false };
+    }
 
     // 按负责人过滤：从 ownerBreakdown 中取该负责人的数据
     const result: MatchTypeAnalysis[] = [];
@@ -275,7 +290,7 @@ function MatchTypeTab({ analysis, ownerName }: { analysis?: SearchTermAnalysis |
 
     for (const mt of analysis.matchTypeAnalysis) {
       const ob = mt.ownerBreakdown?.find(o => o.ownerName === ownerName);
-      if (!ob || ob.spend === 0) continue;
+      if (!ob) continue; // 该负责人在该匹配类型下无数据，跳过
       result.push({
         ...mt,
         totalImpressions: ob.impressions,
@@ -290,8 +305,15 @@ function MatchTypeTab({ analysis, ownerName }: { analysis?: SearchTermAnalysis |
         spendShare: ownerTotalSpend > 0 ? ob.spend / ownerTotalSpend : 0,
       });
     }
-    return result.sort((a, b) => b.totalSpend - a.totalSpend);
+    const sorted = result.sort((a, b) => b.totalSpend - a.totalSpend);
+    return { filteredMatchTypes: sorted, isOwnerFiltered: true, hasOwnerBreakdown: true };
   }, [analysis?.matchTypeAnalysis, ownerName]);
+
+  // 计算各匹配类型占该负责人总花费的比例（展示全量时就是 spendShare）
+  const ownerTotalSpendForShare = useMemo(() => {
+    if (!isOwnerFiltered) return null;
+    return filteredMatchTypes.reduce((s, mt) => s + mt.totalSpend, 0);
+  }, [filteredMatchTypes, isOwnerFiltered]);
 
   if (!filteredMatchTypes.length) {
     return (
@@ -301,6 +323,9 @@ function MatchTypeTab({ analysis, ownerName }: { analysis?: SearchTermAnalysis |
       </div>
     );
   }
+
+  // 如果是旧数据（没有 ownerBreakdown）且有负责人筛选，显示提示条
+  const showReanalyzeTip = !!(ownerName && ownerName !== "ALL" && !hasOwnerBreakdown);
 
   // 精确匹配占比
   const exactMatch = filteredMatchTypes.find(mt => mt.matchType === "精确匹配");
@@ -322,9 +347,17 @@ function MatchTypeTab({ analysis, ownerName }: { analysis?: SearchTermAnalysis |
         <h3 className="text-sm font-semibold">匹配类型维度分析</h3>
         <p className="text-xs text-muted-foreground mt-0.5">
           {ownerName && ownerName !== "ALL" ? `当前筛选：${ownerName}` : "全部负责人"}
-           · 对比各匹配类型的花费分布与效率
+           · 对比各匹配类型的花费分布与效率
         </p>
       </div>
+
+      {/* 旧数据提示条：没有 ownerBreakdown 时提示重新分析 */}
+      {showReanalyzeTip && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-500/10 border border-blue-500/30 text-xs text-blue-400">
+          <span className="flex-shrink-0">ℹ️</span>
+          <span>当前展示的是全部负责人的汇总数据。如需查看 <strong>{ownerName}</strong> 的独立匹配类型分布，请重新上传报表并分析以获取最新数据。</span>
+        </div>
+      )}
 
       {/* 合理性判断卡片 */}
       <div className={`flex items-start gap-3 px-4 py-3 rounded-xl border ${
@@ -429,14 +462,17 @@ function MatchTypeTab({ analysis, ownerName }: { analysis?: SearchTermAnalysis |
 
       {/* 详细数据表格 */}
       <div className="bg-card border border-border/30 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-border/30">
+        <div className="px-4 py-3 border-b border-border/30 flex items-center justify-between">
           <h4 className="text-sm font-semibold">匹配类型详细数据</h4>
+          {isOwnerFiltered && (
+            <span className="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded">已按负责人筛选</span>
+          )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/30 bg-muted/20">
-                {["匹配类型", "展示量", "点击量", "CTR", "花费", "销售额", "转化率", "ACOS", "ROAS"].map(h => (
+                {["匹配类型", "展示量", "点击量", "CTR", "花费", "销售额", "转化率", "ACOS", "ROAS", "花费占比"].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -444,6 +480,10 @@ function MatchTypeTab({ analysis, ownerName }: { analysis?: SearchTermAnalysis |
             <tbody>
               {filteredMatchTypes.map((mt) => {
                 const roas = mt.totalSpend > 0 && mt.totalSales > 0 ? mt.totalSales / mt.totalSpend : null;
+                // 花费占比：已筛选负责人时就是该负责人总花费中的占比，否则是全量 spendShare
+                const displayShare = isOwnerFiltered && ownerTotalSpendForShare
+                  ? mt.totalSpend / ownerTotalSpendForShare
+                  : mt.spendShare;
                 return (
                   <tr key={mt.matchType} className="border-b border-border/20 hover:bg-muted/10 transition-colors">
                     <td className="px-4 py-3">
@@ -464,6 +504,16 @@ function MatchTypeTab({ analysis, ownerName }: { analysis?: SearchTermAnalysis |
                       mt.acos > 0.5 ? "text-amber-400" : "text-emerald-400"
                     }`}>{pct(mt.acos)}</td>
                     <td className="px-4 py-3 text-muted-foreground">{roas != null ? roas.toFixed(2) : "—"}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-14 bg-muted/30 rounded-full h-1.5">
+                          <div className="h-1.5 rounded-full" style={{ width: `${Math.min(100, displayShare * 100)}%`, background: MATCH_COLORS[mt.matchType] ?? "#6366f1" }} />
+                        </div>
+                        <span className="text-xs" style={{ color: MATCH_COLORS[mt.matchType] ?? "#6366f1" }}>
+                          {(displayShare * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
