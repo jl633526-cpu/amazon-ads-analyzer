@@ -77,6 +77,8 @@ export const analysisResults = mysqlTable("analysis_results", {
   targetingSuggestions: json("targetingSuggestions"),
   // Search Term清单
   searchTermLists: json("searchTermLists"),
+  // Search Term深度分析（以搜索词为核心）
+  searchTermAnalysis: json("searchTermAnalysis"),
   // 运营动作清单
   actionItems: json("actionItems"),
   // 原始指标数据

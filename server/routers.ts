@@ -17,6 +17,7 @@ import {
 import { parseReportBuffer } from "./reportParser";
 import { runFullAnalysis } from "./analysisEngine";
 import type { StandardRow } from "./reportParser";
+import { storageGetSignedUrl } from "./storage";
 
 export const appRouter = router({
   system: systemRouter,
@@ -154,12 +155,10 @@ async function runAnalysisAsync(taskId: number) {
     // 从存储中读取并解析每个文件
     for (const file of files) {
       try {
-        // 通过内部URL获取文件内容
-        const response = await fetch(`${process.env.BUILT_IN_FORGE_API_URL || ""}${file.fileUrl}`, {
-          headers: {
-            Authorization: `Bearer ${process.env.BUILT_IN_FORGE_API_KEY || ""}`,
-          },
-        });
+        // 使用 storageGetSignedUrl 获取 S3 预签名 URL，再直接下载文件
+        const signedUrl = await storageGetSignedUrl(file.fileKey);
+        console.log(`[Analysis] Fetching ${file.originalName} from signed URL: ${signedUrl.slice(0, 80)}...`);
+        const response = await fetch(signedUrl);
         
         if (!response.ok) {
           console.warn(`[Analysis] Failed to fetch file ${file.originalName}: ${response.status}`);
@@ -168,8 +167,11 @@ async function runAnalysisAsync(taskId: number) {
 
         const buffer = Buffer.from(await response.arrayBuffer());
         const parsed = await parseReportBuffer(buffer, file.originalName);
+        console.log(`[Analysis] Parsed ${file.originalName}: detected type=${parsed.reportType}, rows=${parsed.rowCount}`);
 
-        switch (file.reportType) {
+        // 使用实时解析到的类型（parsed.reportType）而非存储时的类型（file.reportType）
+        // 这样即使之前上传时误识别也能正确分流
+        switch (parsed.reportType) {
           case "campaign_report":
             allRows.campaignRows.push(...parsed.rows);
             break;

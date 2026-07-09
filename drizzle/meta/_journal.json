@@ -15,6 +15,13 @@
       "when": 1783422981041,
       "tag": "0001_magical_iron_patriot",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1783561940516,
+      "tag": "0002_nasty_mister_fear",
+      "breakpoints": true
     }
   ]
 }

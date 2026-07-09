@@ -37,3 +37,12 @@
 - [x] SearchTermTab 接收 ownerFilter prop，按负责人过滤
 - [x] ActionItemsTab 接收 ownerFilter prop，按负责人过滤
 - [x] OwnerAnalysisTab 筛选后高亮/聚焦选中负责人
+
+## Phase 7: 报表解析Bug修复 + 搜索词核心化
+- [x] 修复routers.ts中文件读取404问题（改用storageGetSignedUrl）
+- [x] 修复Targeting Report误识别问题（识别顺序：Search Term > Targeting > Business > Advertised > Campaign）
+- [x] 修复字段名末尾空格问题（trim处理）
+- [x] 修复switch改用parsed.reportType而非存储时的file.reportType
+- [x] 新增SearchTermAnalysis深度分析引擎（词级别聚合、词性分类、标签判断）
+- [x] 数据库新增searchTermAnalysis字段
+- [x] 重构SearchTermTab：10个Tab包含概览、高价值词、亏损词、无效词、潜力词、花费TOP词、否词、转精准、放大、负责人词汇总

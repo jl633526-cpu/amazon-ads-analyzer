@@ -428,6 +428,7 @@ export default function Analysis() {
             {activeTab === "searchterms" && (
               <SearchTermTab
                 data={result.searchTermLists as never}
+                analysis={result.searchTermAnalysis as never}
                 ownerFilter={selectedOwner}
                 ownerName={selectedOwnerName}
               />

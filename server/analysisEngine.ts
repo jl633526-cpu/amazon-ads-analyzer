@@ -420,6 +420,256 @@ export function calcTargetingSuggestions(targetingRows: StandardRow[]): Targetin
 }
 
 // ============================================================
+// Search Term 核心分析（以搜索词为主）
+// ============================================================
+
+/** 词性分类 */
+export type WordCategory =
+  | "brand"        // 品牌词
+  | "competitor"   // 竞品词
+  | "functional"   // 功能词
+  | "longtail"     // 长尾词
+  | "generic";     // 泛求词
+
+/** 词级别聚合指标 */
+export interface SearchTermAggregate {
+  searchTerm: string;
+  wordCategory: WordCategory;
+  totalImpressions: number;
+  totalClicks: number;
+  totalSpend: number;
+  totalOrders: number;
+  totalSales: number;
+  acos: number | null;
+  cvr: number | null;
+  ctr: number | null;
+  cpc: number | null;
+  campaignCount: number;       // 出现在多少个 Campaign
+  campaigns: string[];         // 关联的 Campaign 列表
+  matchTypes: string[];        // 匹配类型列表
+  ownerNames: string[];        // 负责人列表
+  label: "high_value" | "loss" | "invalid" | "potential" | "normal";
+  labelReason: string;
+}
+
+/** 搜索词深度分析结果 */
+export interface SearchTermAnalysis {
+  totalTerms: number;          // 搜索词总数
+  uniqueTerms: number;         // 去重后的单一词数
+  totalSpend: number;
+  totalOrders: number;
+  totalSales: number;
+  avgAcos: number | null;
+  avgCvr: number | null;
+  // 分类汇总
+  highValueTerms: SearchTermAggregate[];   // 高价值词（转化好、ACOS优）
+  lossTerms: SearchTermAggregate[];        // 亏损词（花费多、ACOS高）
+  invalidTerms: SearchTermAggregate[];     // 无效词（点击多、无转化）
+  potentialTerms: SearchTermAggregate[];   // 潜力词（曝光多、点击少）
+  // 词性分布
+  categoryDistribution: Record<WordCategory, { count: number; spend: number; orders: number }>;
+  // Top词汇总表（按花费降序）
+  topTermsBySpend: SearchTermAggregate[];
+  // 负责人维度搜索词汇总
+  ownerTermStats: Array<{
+    ownerName: string;
+    ownerCode: string;
+    termCount: number;
+    spend: number;
+    orders: number;
+    acos: number | null;
+    highValueCount: number;
+    invalidCount: number;
+  }>;
+}
+
+/**
+ * 判断词性分类
+ */
+function classifyWord(term: string): WordCategory {
+  const t = term.toLowerCase();
+  // 长尾词：词数大于3个
+  const wordCount = t.split(/\s+/).filter(Boolean).length;
+  if (wordCount >= 4) return "longtail";
+  // 竞品词：包含常见竞品品牌名（可根据实际业务扩展）
+  const competitorKeywords = ["competitor", "rival", "vs", "alternative", "compare"];
+  if (competitorKeywords.some(k => t.includes(k))) return "competitor";
+  // 功能词：包含功能/用途类关键词
+  const functionalKeywords = ["for", "with", "without", "anti", "pro", "plus", "max", "mini", "heavy", "light", "fast", "slow", "large", "small", "big", "long", "short", "waterproof", "wireless", "rechargeable", "portable", "adjustable", "foldable"];
+  if (functionalKeywords.some(k => t.includes(k))) return "functional";
+  // 泛求词：单词
+  if (wordCount === 1) return "generic";
+  return "functional";
+}
+
+/**
+ * 搜索词深度分析主函数
+ */
+export function calcSearchTermAnalysis(searchTermRows: StandardRow[]): SearchTermAnalysis {
+  // 按搜索词聚合
+  const termMap = new Map<string, {
+    rows: StandardRow[];
+    campaigns: Set<string>;
+    matchTypes: Set<string>;
+    owners: Map<string, string>; // code -> name
+  }>();
+
+  for (const row of searchTermRows) {
+    const term = (row.search_term ?? "").trim().toLowerCase();
+    if (!term) continue;
+    if (!termMap.has(term)) {
+      termMap.set(term, { rows: [], campaigns: new Set(), matchTypes: new Set(), owners: new Map() });
+    }
+    const entry = termMap.get(term)!;
+    entry.rows.push(row);
+    if (row.campaign_name) entry.campaigns.add(row.campaign_name);
+    if (row.match_type) entry.matchTypes.add(row.match_type.toUpperCase());
+    if (row.owner_code && row.owner_name) entry.owners.set(row.owner_code, row.owner_name);
+  }
+
+  const aggregates: SearchTermAggregate[] = [];
+
+  for (const [term, entry] of Array.from(termMap.entries())) {
+    const rows = entry.rows;
+    const totalImpressions = sum(rows, "impressions");
+    const totalClicks = sum(rows, "clicks");
+    const totalSpend = sum(rows, "spend");
+    const totalOrders = sum(rows, "orders");
+    const totalSales = sum(rows, "ad_sales");
+
+    const acos = totalSales > 0 ? totalSpend / totalSales : null;
+    const cvr = totalClicks > 0 ? totalOrders / totalClicks : null;
+    const ctr = totalImpressions > 0 ? totalClicks / totalImpressions : null;
+    const cpc = totalClicks > 0 ? totalSpend / totalClicks : null;
+
+    const wordCategory = classifyWord(term);
+
+    // 标签判断
+    let label: SearchTermAggregate["label"] = "normal";
+    let labelReason = "";
+
+    if (totalClicks >= THRESHOLDS.clicks_no_order && totalOrders === 0) {
+      label = "invalid";
+      labelReason = `点击${totalClicks}次无转化，建议否词`;
+    } else if (totalOrders >= 3 && acos !== null && acos < THRESHOLDS.acos.excellent) {
+      label = "high_value";
+      labelReason = `${totalOrders}单，ACOS ${pct(acos)}，高价值词`;
+    } else if (totalSpend > 5 && acos !== null && acos > THRESHOLDS.acos.danger) {
+      label = "loss";
+      labelReason = `花费$${totalSpend.toFixed(2)}，ACOS ${pct(acos)}，亏损词`;
+    } else if (totalImpressions >= 500 && totalClicks < 5) {
+      label = "potential";
+      labelReason = `曝光${totalImpressions}次但点击仅${totalClicks}次，可优化主图/标题`;
+    }
+
+    aggregates.push({
+      searchTerm: term,
+      wordCategory,
+      totalImpressions,
+      totalClicks,
+      totalSpend,
+      totalOrders,
+      totalSales,
+      acos,
+      cvr,
+      ctr,
+      cpc,
+      campaignCount: entry.campaigns.size,
+      campaigns: Array.from(entry.campaigns).slice(0, 5),
+      matchTypes: Array.from(entry.matchTypes),
+      ownerNames: Array.from(entry.owners.values()),
+      label,
+      labelReason,
+    });
+  }
+
+  // 分类
+  const highValueTerms = aggregates.filter(a => a.label === "high_value").sort((a, b) => b.totalOrders - a.totalOrders).slice(0, 100);
+  const lossTerms = aggregates.filter(a => a.label === "loss").sort((a, b) => b.totalSpend - a.totalSpend).slice(0, 100);
+  const invalidTerms = aggregates.filter(a => a.label === "invalid").sort((a, b) => b.totalSpend - a.totalSpend).slice(0, 200);
+  const potentialTerms = aggregates.filter(a => a.label === "potential").sort((a, b) => b.totalImpressions - a.totalImpressions).slice(0, 100);
+  const topTermsBySpend = [...aggregates].sort((a, b) => b.totalSpend - a.totalSpend).slice(0, 100);
+
+  // 词性分布
+  const categoryDistribution: Record<WordCategory, { count: number; spend: number; orders: number }> = {
+    brand: { count: 0, spend: 0, orders: 0 },
+    competitor: { count: 0, spend: 0, orders: 0 },
+    functional: { count: 0, spend: 0, orders: 0 },
+    longtail: { count: 0, spend: 0, orders: 0 },
+    generic: { count: 0, spend: 0, orders: 0 },
+  };
+  for (const a of aggregates) {
+    categoryDistribution[a.wordCategory].count++;
+    categoryDistribution[a.wordCategory].spend += a.totalSpend;
+    categoryDistribution[a.wordCategory].orders += a.totalOrders;
+  }
+
+  // 负责人维度搜索词汇总
+  const ownerTermMap = new Map<string, {
+    ownerCode: string; ownerName: string;
+    terms: Set<string>; spend: number; orders: number;
+    highValueCount: number; invalidCount: number;
+  }>();
+  for (const row of searchTermRows) {
+    const code = row.owner_code ?? "UNKNOWN";
+    const name = row.owner_name ?? "未识别";
+    const term = (row.search_term ?? "").trim().toLowerCase();
+    if (!ownerTermMap.has(code)) {
+      ownerTermMap.set(code, { ownerCode: code, ownerName: name, terms: new Set(), spend: 0, orders: 0, highValueCount: 0, invalidCount: 0 });
+    }
+    const entry = ownerTermMap.get(code)!;
+    entry.terms.add(term);
+    entry.spend += row.spend ?? 0;
+    entry.orders += row.orders ?? 0;
+  }
+  // 将高价值词/无效词计入负责人
+  for (const a of aggregates) {
+    for (const ownerName of a.ownerNames) {
+      for (const [code, entry] of Array.from(ownerTermMap.entries())) {
+        if (entry.ownerName === ownerName) {
+          if (a.label === "high_value") entry.highValueCount++;
+          if (a.label === "invalid") entry.invalidCount++;
+        }
+      }
+    }
+  }
+  const ownerTermStats = Array.from(ownerTermMap.values()).map(e => ({
+    ownerName: e.ownerName,
+    ownerCode: e.ownerCode,
+    termCount: e.terms.size,
+    spend: e.spend,
+    orders: e.orders,
+    acos: e.orders > 0 ? e.spend / (e.orders * 30) : null, // 简化计算
+    highValueCount: e.highValueCount,
+    invalidCount: e.invalidCount,
+  })).sort((a, b) => b.spend - a.spend);
+
+  const totalSpend = aggregates.reduce((s, a) => s + a.totalSpend, 0);
+  const totalOrders = aggregates.reduce((s, a) => s + a.totalOrders, 0);
+  const totalSales = aggregates.reduce((s, a) => s + a.totalSales, 0);
+  const avgAcos = totalSales > 0 ? totalSpend / totalSales : null;
+  const totalClicks = aggregates.reduce((s, a) => s + a.totalClicks, 0);
+  const avgCvr = totalClicks > 0 ? totalOrders / totalClicks : null;
+
+  return {
+    totalTerms: searchTermRows.length,
+    uniqueTerms: termMap.size,
+    totalSpend,
+    totalOrders,
+    totalSales,
+    avgAcos,
+    avgCvr,
+    highValueTerms,
+    lossTerms,
+    invalidTerms,
+    potentialTerms,
+    categoryDistribution,
+    topTermsBySpend,
+    ownerTermStats,
+  };
+}
+
+// ============================================================
 // Search Term 三类清单
 // ============================================================
 export interface SearchTermItem {
@@ -649,6 +899,7 @@ export interface FullAnalysisResult {
   campaignSuggestions: CampaignSuggestion[];
   targetingSuggestions: TargetingSuggestion[];
   searchTermLists: SearchTermLists;
+  searchTermAnalysis: SearchTermAnalysis;  // 新增：搜索词深度分析
   actionItems: ActionItem[];
 }
 
@@ -666,6 +917,7 @@ export function runFullAnalysis(allRows: {
   const campaignSuggestions = calcCampaignSuggestions(campaignRows);
   const targetingSuggestions = calcTargetingSuggestions(targetingRows);
   const searchTermLists = calcSearchTermLists(searchTermRows);
+  const searchTermAnalysis = calcSearchTermAnalysis(searchTermRows); // 新增
   const actionItems = buildActionItems(campaignSuggestions, targetingSuggestions, searchTermLists);
 
   return {
@@ -674,6 +926,7 @@ export function runFullAnalysis(allRows: {
     campaignSuggestions,
     targetingSuggestions,
     searchTermLists,
+    searchTermAnalysis,
     actionItems,
   };
 }

@@ -137,6 +137,7 @@ export async function saveAnalysisResult(taskId: number, result: Record<string, 
     campaignSuggestions: result.campaignSuggestions as never,
     targetingSuggestions: result.targetingSuggestions as never,
     searchTermLists: result.searchTermLists as never,
+    searchTermAnalysis: result.searchTermAnalysis as never,
     actionItems: result.actionItems as never,
     rawMetrics: result.rawMetrics as never,
   });
