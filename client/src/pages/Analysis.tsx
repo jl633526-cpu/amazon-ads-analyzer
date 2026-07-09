@@ -294,18 +294,11 @@ export default function Analysis() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => {
-                if (isCompleted) {
-                  // 已完成的任务：重新触发分析（重跑引擎，获取最新结果）
-                  runAnalysisMutation.mutate({ taskId });
-                } else {
-                  refetchResult();
-                }
-              }}
-              disabled={isProcessing || runAnalysisMutation.isPending}
+              onClick={() => refetchResult()}
+              disabled={isProcessing || resultLoading}
             >
-              <RefreshCw className={`h-4 w-4 mr-1 ${(isProcessing || runAnalysisMutation.isPending) ? "animate-spin" : ""}`} />
-              {runAnalysisMutation.isPending ? "分析中..." : "重新分析"}
+              <RefreshCw className={`h-4 w-4 mr-1 ${(isProcessing || resultLoading) ? "animate-spin" : ""}`} />
+              刷新
             </Button>
             {isCompleted && (
               <Button size="sm" onClick={handleDownloadCSV}>
