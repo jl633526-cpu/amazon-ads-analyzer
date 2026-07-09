@@ -74,6 +74,20 @@ interface MatchTypeAnalysis {
   ctr: number | null;
   cpc: number | null;
   spendShare: number;
+  ownerBreakdown?: Array<{
+    ownerName: string;
+    ownerCode: string;
+    impressions: number;
+    clicks: number;
+    spend: number;
+    orders: number;
+    sales: number;
+    acos: number | null;
+    cvr: number | null;
+    ctr: number | null;
+    cpc: number | null;
+    spendShare: number;
+  }>;
 }
 
 interface ScatterPoint {
@@ -169,6 +183,14 @@ const SCATTER_COLORS: Record<string, string> = {
   high_value: "#10b981", loss: "#f43f5e", invalid: "#f59e0b", potential: "#6366f1", normal: "#64748b",
 };
 
+// 格式化大数字（K/M）
+const formatCompact = (v: number | null | undefined): string => {
+  if (v == null) return "—";
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
+  return v.toLocaleString();
+};
+
 const MATCH_COLORS: Record<string, string> = {
   // 中文标准化 key（匹配截图颜色）
   "广泛匹配": "#f59e0b",   // 橙色
@@ -231,6 +253,224 @@ function TermRow({ agg, rank }: { agg: SearchTermAggregate; rank?: number }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// 子组件：匹配类型分析 Tab
+// ============================================================
+function MatchTypeTab({ analysis, ownerName }: { analysis?: SearchTermAnalysis | null; ownerName?: string }) {
+  // 按负责人过滤匹配类型数据
+  const filteredMatchTypes = useMemo(() => {
+    if (!analysis?.matchTypeAnalysis?.length) return [];
+    if (!ownerName || ownerName === "ALL") return analysis.matchTypeAnalysis;
+
+    // 按负责人过滤：从 ownerBreakdown 中取该负责人的数据
+    const result: MatchTypeAnalysis[] = [];
+    const ownerTotalSpend = analysis.matchTypeAnalysis.reduce((sum, mt) => {
+      const ob = mt.ownerBreakdown?.find(o => o.ownerName === ownerName);
+      return sum + (ob?.spend ?? 0);
+    }, 0);
+
+    for (const mt of analysis.matchTypeAnalysis) {
+      const ob = mt.ownerBreakdown?.find(o => o.ownerName === ownerName);
+      if (!ob || ob.spend === 0) continue;
+      result.push({
+        ...mt,
+        totalImpressions: ob.impressions,
+        totalClicks: ob.clicks,
+        totalSpend: ob.spend,
+        totalOrders: ob.orders,
+        totalSales: ob.sales,
+        acos: ob.acos,
+        cvr: ob.cvr,
+        ctr: ob.ctr,
+        cpc: ob.cpc,
+        spendShare: ownerTotalSpend > 0 ? ob.spend / ownerTotalSpend : 0,
+      });
+    }
+    return result.sort((a, b) => b.totalSpend - a.totalSpend);
+  }, [analysis?.matchTypeAnalysis, ownerName]);
+
+  if (!filteredMatchTypes.length) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+        <Layers className="h-10 w-10 mb-3 opacity-30" />
+        <p className="text-sm">暂无匹配类型数据</p>
+      </div>
+    );
+  }
+
+  // 精确匹配占比
+  const exactMatch = filteredMatchTypes.find(mt => mt.matchType === "精确匹配");
+  const exactShare = exactMatch?.spendShare ?? 0;
+  const isReasonable = exactShare >= 0.7;
+
+  // 环形图数据
+  const pieData = filteredMatchTypes.map(mt => ({
+    name: mt.matchType,
+    value: Math.round(mt.totalSpend * 100) / 100,
+    share: mt.spendShare,
+    fill: MATCH_COLORS[mt.matchType] ?? "#6366f1",
+  }));
+
+  return (
+    <div className="space-y-5">
+      {/* 标题 */}
+      <div>
+        <h3 className="text-sm font-semibold">匹配类型维度分析</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {ownerName && ownerName !== "ALL" ? `当前筛选：${ownerName}` : "全部负责人"}
+           · 对比各匹配类型的花费分布与效率
+        </p>
+      </div>
+
+      {/* 合理性判断卡片 */}
+      <div className={`flex items-start gap-3 px-4 py-3 rounded-xl border ${
+        isReasonable
+          ? "bg-emerald-500/10 border-emerald-500/30"
+          : exactShare >= 0.5
+          ? "bg-amber-500/10 border-amber-500/30"
+          : "bg-red-500/10 border-red-500/30"
+      }`}>
+        <div className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${
+          isReasonable ? "bg-emerald-400" : exactShare >= 0.5 ? "bg-amber-400" : "bg-red-400"
+        }`} />
+        <div>
+          <div className={`text-sm font-semibold ${
+            isReasonable ? "text-emerald-400" : exactShare >= 0.5 ? "text-amber-400" : "text-red-400"
+          }`}>
+            {isReasonable
+              ? "✓ 投放结构合理"
+              : exactShare >= 0.5
+              ? "⚠️ 精确匹配占比偏低，建议优化"
+              : "⚠️ 精确匹配占比过低，投放结构待改善"}
+          </div>
+          <div className={`text-xs mt-0.5 ${
+            isReasonable ? "text-emerald-400/70" : exactShare >= 0.5 ? "text-amber-400/70" : "text-red-400/70"
+          }`}>
+            {isReasonable
+              ? `精确匹配占比 ${(exactShare * 100).toFixed(1)}%，达到 70% 合理阈値，广告资金利用率较高`
+              : `精确匹配当前占比 ${(exactShare * 100).toFixed(1)}%，建议提升至 70% 以上，减少广泛/自动匹配的浪费消耗`}
+          </div>
+        </div>
+      </div>
+
+      {/* 上半部：环形图 + 占比列表 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* 环形图 */}
+        <div className="bg-card border border-border/30 rounded-xl p-4">
+          <h4 className="text-xs font-medium text-muted-foreground mb-3">花费占比分布</h4>
+          <ResponsiveContainer width="100%" height={200}>
+            <PieChart>
+              <Pie
+                data={pieData}
+                cx="50%" cy="50%"
+                innerRadius={55} outerRadius={80}
+                dataKey="value"
+                paddingAngle={2}
+              >
+                {pieData.map((entry) => (
+                  <Cell key={entry.name} fill={entry.fill} />
+                ))}
+              </Pie>
+              <ReTooltip
+                contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, fontSize: 12 }}
+                formatter={(v: number, _name: string, props: { payload?: { name: string; share: number } }) => [
+                  `$${v.toFixed(2)} (${((props.payload?.share ?? 0) * 100).toFixed(1)}%)`,
+                  props.payload?.name ?? "",
+                ]}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+          {/* 图例 */}
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-2 justify-center">
+            {pieData.map(d => (
+              <div key={d.name} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: d.fill }} />
+                <span>{d.name}</span>
+                <span className="font-medium text-foreground">{(d.share * 100).toFixed(1)}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 占比进度条 */}
+        <div className="bg-card border border-border/30 rounded-xl p-4">
+          <h4 className="text-xs font-medium text-muted-foreground mb-4">各类型花费占比</h4>
+          <div className="space-y-4">
+            {filteredMatchTypes.map(mt => (
+              <div key={mt.matchType}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ background: MATCH_COLORS[mt.matchType] ?? "#6366f1" }} />
+                    <span className="text-xs font-medium">{mt.matchType}</span>
+                  </div>
+                  <span className="text-xs font-semibold" style={{ color: MATCH_COLORS[mt.matchType] ?? "#6366f1" }}>
+                    {(mt.spendShare * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <div className="w-full bg-muted/30 rounded-full h-2">
+                  <div
+                    className="h-2 rounded-full transition-all"
+                    style={{ width: `${Math.min(100, mt.spendShare * 100)}%`, background: MATCH_COLORS[mt.matchType] ?? "#6366f1" }}
+                  />
+                </div>
+                <div className="flex justify-between mt-1 text-xs text-muted-foreground">
+                  <span>花费 {usd(mt.totalSpend)}</span>
+                  <span>ACOS {pct(mt.acos)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* 详细数据表格 */}
+      <div className="bg-card border border-border/30 rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-border/30">
+          <h4 className="text-sm font-semibold">匹配类型详细数据</h4>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border/30 bg-muted/20">
+                {["匹配类型", "展示量", "点击量", "CTR", "花费", "销售额", "转化率", "ACOS", "ROAS"].map(h => (
+                  <th key={h} className="px-4 py-3 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredMatchTypes.map((mt) => {
+                const roas = mt.totalSpend > 0 && mt.totalSales > 0 ? mt.totalSales / mt.totalSpend : null;
+                return (
+                  <tr key={mt.matchType} className="border-b border-border/20 hover:bg-muted/10 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: MATCH_COLORS[mt.matchType] ?? "#6366f1" }} />
+                        <span className="text-sm font-medium">{mt.matchType}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{formatCompact(mt.totalImpressions)}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{formatCompact(mt.totalClicks)}</td>
+                    <td className="px-4 py-3">{pct(mt.ctr)}</td>
+                    <td className="px-4 py-3 font-medium">{usd(mt.totalSpend)}</td>
+                    <td className="px-4 py-3 font-medium text-emerald-400">{usd(mt.totalSales)}</td>
+                    <td className="px-4 py-3">{pct(mt.cvr)}</td>
+                    <td className={`px-4 py-3 font-medium ${
+                      mt.acos == null ? "text-muted-foreground" :
+                      mt.acos > 0.8 ? "text-red-400" :
+                      mt.acos > 0.5 ? "text-amber-400" : "text-emerald-400"
+                    }`}>{pct(mt.acos)}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{roas != null ? roas.toFixed(2) : "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
@@ -520,63 +760,7 @@ export default function SearchTermTab({ data, analysis, ownerFilter: _ownerFilte
 
       {/* ── 匹配类型分析 ── */}
       {activeTab === "matchtype" && (
-        <div className="space-y-4">
-          <div>
-            <h3 className="text-sm font-semibold">匹配类型维度分析</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">对比 Broad / Phrase / Exact 各匹配类型的花费效率</p>
-          </div>
-          {!analysis?.matchTypeAnalysis?.length ? (
-            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground"><Layers className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无匹配类型数据</p></div>
-          ) : (
-            <>
-              <div className="bg-card border border-border/30 rounded-xl p-4">
-                <h4 className="text-xs font-medium text-muted-foreground mb-3">花费占比</h4>
-                <ResponsiveContainer width="100%" height={Math.max(120, analysis.matchTypeAnalysis.length * 40)}>
-                  <BarChart data={analysis.matchTypeAnalysis} layout="vertical" margin={{ left: 120, right: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
-                    <XAxis type="number" tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} tick={{ fill: "#64748b", fontSize: 11 }} />
-                    <YAxis type="category" dataKey="matchType" tick={{ fill: "#94a3b8", fontSize: 11 }} width={120} />
-                    <ReTooltip contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, fontSize: 12 }} formatter={(v: number) => [`${(v * 100).toFixed(1)}%`, "花费占比"]} />
-                    <Bar dataKey="spendShare" radius={[0, 4, 4, 0]}>
-                      {analysis.matchTypeAnalysis.map((entry) => <Cell key={entry.matchType} fill={MATCH_COLORS[entry.matchType] ?? "#6366f1"} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="bg-card border border-border/30 rounded-xl overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border/30 bg-muted/20">
-                        {["匹配类型", "词数", "花费", "订单", "ACOS", "CVR", "CTR", "CPC", "花费占比"].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">{h}</th>)}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {analysis.matchTypeAnalysis.map((mt) => (
-                        <tr key={mt.matchType} className="border-b border-border/20 hover:bg-muted/10 transition-colors">
-                          <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 rounded font-medium" style={{ background: `${MATCH_COLORS[mt.matchType] ?? "#6366f1"}20`, color: MATCH_COLORS[mt.matchType] ?? "#6366f1" }}>{mt.matchType}</span></td>
-                          <td className="px-4 py-3 text-muted-foreground">{num(mt.termCount)}</td>
-                          <td className="px-4 py-3 font-medium">{usd(mt.totalSpend)}</td>
-                          <td className="px-4 py-3">{num(mt.totalOrders)}</td>
-                          <td className={`px-4 py-3 font-medium ${mt.acos && mt.acos > 0.5 ? "text-red-400" : "text-emerald-400"}`}>{pct(mt.acos)}</td>
-                          <td className="px-4 py-3">{pct(mt.cvr)}</td>
-                          <td className="px-4 py-3">{pct(mt.ctr)}</td>
-                          <td className="px-4 py-3">{usd(mt.cpc)}</td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <div className="w-16 bg-muted/30 rounded-full h-1.5"><div className="h-1.5 rounded-full" style={{ width: `${mt.spendShare * 100}%`, background: MATCH_COLORS[mt.matchType] ?? "#6366f1" }} /></div>
-                              <span className="text-xs text-muted-foreground">{pct(mt.spendShare)}</span>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
+        <MatchTypeTab analysis={analysis} ownerName={ownerName} />
       )}
 
       {/* ── 高价值词 ── */}

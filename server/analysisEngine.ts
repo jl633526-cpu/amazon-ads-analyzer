@@ -490,6 +490,21 @@ export interface MatchTypeAnalysis {
   ctr: number | null;
   cpc: number | null;
   spendShare: number;           // 占总花费比例
+  // 按负责人细分（用于前端筛选）
+  ownerBreakdown?: Array<{
+    ownerName: string;
+    ownerCode: string;
+    impressions: number;
+    clicks: number;
+    spend: number;
+    orders: number;
+    sales: number;
+    acos: number | null;
+    cvr: number | null;
+    ctr: number | null;
+    cpc: number | null;
+    spendShare: number; // 在该负责人总花费中的占比（由前端计算）
+  }>;
 }
 
 /** 二维散点图数据点 */
@@ -759,6 +774,8 @@ export function calcSearchTermAnalysis(searchTermRows: StandardRow[]): SearchTer
   // ============================================================
   const matchTypeMap = new Map<string, {
     terms: Set<string>; impressions: number; clicks: number; spend: number; orders: number; sales: number;
+    // 按负责人细分
+    ownerMap: Map<string, { ownerName: string; ownerCode: string; impressions: number; clicks: number; spend: number; orders: number; sales: number }>;
   }>();
 
   // 匹配类型中文标准化
@@ -776,7 +793,7 @@ export function calcSearchTermAnalysis(searchTermRows: StandardRow[]): SearchTer
     const mt = normalizeMatchType(row.match_type);
     const term = (row.search_term ?? "").trim().toLowerCase();
     if (!matchTypeMap.has(mt)) {
-      matchTypeMap.set(mt, { terms: new Set(), impressions: 0, clicks: 0, spend: 0, orders: 0, sales: 0 });
+      matchTypeMap.set(mt, { terms: new Set(), impressions: 0, clicks: 0, spend: 0, orders: 0, sales: 0, ownerMap: new Map() });
     }
     const me = matchTypeMap.get(mt)!;
     if (term) me.terms.add(term);
@@ -785,6 +802,18 @@ export function calcSearchTermAnalysis(searchTermRows: StandardRow[]): SearchTer
     me.spend += row.spend ?? 0;
     me.orders += row.orders ?? 0;
     me.sales += row.ad_sales ?? 0;
+    // 按负责人细分
+    const ownerCode = row.owner_code ?? "UNKNOWN";
+    const ownerName = row.owner_name ?? "未知";
+    if (!me.ownerMap.has(ownerCode)) {
+      me.ownerMap.set(ownerCode, { ownerName, ownerCode, impressions: 0, clicks: 0, spend: 0, orders: 0, sales: 0 });
+    }
+    const oe = me.ownerMap.get(ownerCode)!;
+    oe.impressions += row.impressions ?? 0;
+    oe.clicks += row.clicks ?? 0;
+    oe.spend += row.spend ?? 0;
+    oe.orders += row.orders ?? 0;
+    oe.sales += row.ad_sales ?? 0;
   }
 
   const matchTypeTotalSpend = Array.from(matchTypeMap.values()).reduce((s, v) => s + v.spend, 0);
@@ -802,6 +831,20 @@ export function calcSearchTermAnalysis(searchTermRows: StandardRow[]): SearchTer
       ctr: v.impressions > 0 ? v.clicks / v.impressions : null,
       cpc: v.clicks > 0 ? v.spend / v.clicks : null,
       spendShare: matchTypeTotalSpend > 0 ? v.spend / matchTypeTotalSpend : 0,
+      ownerBreakdown: Array.from(v.ownerMap.values()).map(oe => ({
+        ownerName: oe.ownerName,
+        ownerCode: oe.ownerCode,
+        impressions: oe.impressions,
+        clicks: oe.clicks,
+        spend: oe.spend,
+        orders: oe.orders,
+        sales: oe.sales,
+        acos: oe.sales > 0 ? oe.spend / oe.sales : null,
+        cvr: oe.clicks > 0 ? oe.orders / oe.clicks : null,
+        ctr: oe.impressions > 0 ? oe.clicks / oe.impressions : null,
+        cpc: oe.clicks > 0 ? oe.spend / oe.clicks : null,
+        spendShare: 0, // 前端按负责人总花费重新计算
+      })).sort((a, b) => b.spend - a.spend),
     }))
     .sort((a, b) => b.totalSpend - a.totalSpend);
 
