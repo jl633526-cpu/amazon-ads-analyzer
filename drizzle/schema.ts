@@ -34,6 +34,7 @@ export const analysisTasks = mysqlTable("analysis_tasks", {
     .default("pending")
     .notNull(),
   errorMessage: text("errorMessage"),
+  shareToken: varchar("shareToken", { length: 64 }).unique(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

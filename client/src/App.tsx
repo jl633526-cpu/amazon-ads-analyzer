@@ -8,6 +8,7 @@ import Home from "./pages/Home";
 import Upload from "./pages/Upload";
 import Analysis from "./pages/Analysis";
 import Dashboard from "./pages/Dashboard";
+import SharedAnalysis from "./pages/SharedAnalysis";
 
 function Router() {
   return (
@@ -15,6 +16,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/upload" component={Upload} />
       <Route path="/analysis/:taskId" component={Analysis} />
+      <Route path="/share/:shareToken" component={SharedAnalysis} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

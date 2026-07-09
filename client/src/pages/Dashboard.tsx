@@ -13,7 +13,9 @@ import {
   Loader2,
   FileText,
   ChevronRight,
+  Share2,
 } from "lucide-react";
+import { toast } from "sonner";
 
 const STATUS_CONFIG = {
   pending: { label: "等待中", icon: Clock, color: "text-muted-foreground" },
@@ -25,6 +27,23 @@ const STATUS_CONFIG = {
 export default function Dashboard() {
   const { user, isAuthenticated, loading } = useAuth();
   const [, navigate] = useLocation();
+
+  const generateShareLinkMutation = trpc.analysis.generateShareLink.useMutation({
+    onSuccess: (data) => {
+      const shareUrl = `${window.location.origin}/share/${data.shareToken}`;
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        toast.success("分享链接已复制到剪贴板", {
+          description: shareUrl,
+          duration: 5000,
+        });
+      }).catch(() => {
+        toast.info("分享链接", { description: shareUrl, duration: 10000 });
+      });
+    },
+    onError: (err) => {
+      toast.error(`生成分享链接失败：${err.message}`);
+    },
+  });
 
   const { data: tasks, isLoading, refetch } = trpc.analysis.listTasks.useQuery(undefined, {
     refetchInterval: 5000, // 每5秒刷新一次
@@ -125,7 +144,20 @@ export default function Dashboard() {
                     </div>
                   </div>
                   {task.status === "completed" && (
-                    <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          generateShareLinkMutation.mutate({ taskId: task.id });
+                        }}
+                        className="flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-1.5 text-xs text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-all"
+                        title="生成分享链接"
+                      >
+                        <Share2 className="h-3.5 w-3.5" />
+                        分享
+                      </button>
+                      <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    </div>
                   )}
                 </div>
               );

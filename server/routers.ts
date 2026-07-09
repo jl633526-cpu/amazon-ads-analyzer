@@ -13,7 +13,10 @@ import {
   getReportFilesByTaskId,
   saveAnalysisResult,
   getAnalysisResultByTaskId,
+  setTaskShareToken,
+  getTaskByShareToken,
 } from "./db";
+import { randomBytes } from "crypto";
 import { parseReportBuffer } from "./reportParser";
 import { runFullAnalysis } from "./analysisEngine";
 import type { StandardRow } from "./reportParser";
@@ -101,6 +104,40 @@ export const appRouter = router({
         }
         await createReportFile(input);
         return { success: true };
+      }),
+
+    // 生成分享链接（需要登录，仅任务拥有者可生成）
+    generateShareLink: protectedProcedure
+      .input(z.object({ taskId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const task = await getTaskById(input.taskId);
+        if (!task || task.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "任务不存在" });
+        }
+        if (task.status !== "completed") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "分析尚未完成，无法分享" });
+        }
+        // 若已有 token 则复用，否则生成新的
+        const token = task.shareToken ?? randomBytes(24).toString("hex");
+        if (!task.shareToken) {
+          await setTaskShareToken(input.taskId, token);
+        }
+        return { shareToken: token };
+      }),
+
+    // 通过分享 token 获取结果（无需登录）
+    getSharedResult: publicProcedure
+      .input(z.object({ shareToken: z.string() }))
+      .query(async ({ input }) => {
+        const task = await getTaskByShareToken(input.shareToken);
+        if (!task) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "分享链接无效或已过期" });
+        }
+        if (task.status !== "completed") {
+          return { status: task.status, result: null, taskName: task.name };
+        }
+        const result = await getAnalysisResultByTaskId(task.id);
+        return { status: task.status, result, taskName: task.name };
       }),
 
     // 触发分析（服务端执行完整分析流程）

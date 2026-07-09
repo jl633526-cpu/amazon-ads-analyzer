@@ -161,3 +161,19 @@ export async function getAnalysisResultByTaskId(taskId: number) {
   const result = await db.select().from(analysisResults).where(eq(analysisResults.taskId, taskId)).limit(1);
   return result[0];
 }
+
+// ============================================================
+// Share Token
+// ============================================================
+export async function setTaskShareToken(taskId: number, shareToken: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(analysisTasks).set({ shareToken }).where(eq(analysisTasks.id, taskId));
+}
+
+export async function getTaskByShareToken(shareToken: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(analysisTasks).where(eq(analysisTasks.shareToken, shareToken)).limit(1);
+  return result[0];
+}
