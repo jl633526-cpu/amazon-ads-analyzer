@@ -13,6 +13,7 @@ interface CampaignSuggestion {
   acos: number | null;
   ctr: number | null;
   cvr: number | null;
+  cpc: number | null;
   issues: string[];
   actions: string[];
   priority: "P1" | "P2" | "P3";
@@ -145,13 +146,14 @@ export default function CampaignSuggestionsTab({ data, ownerFilter = "ALL" }: Pr
               {isExpanded && (
                 <div className="border-t border-border/50 p-4 bg-muted/5">
                   {/* 指标行 */}
-                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-4">
+                  <div className="grid grid-cols-3 sm:grid-cols-7 gap-3 mb-4">
                     {[
                       { label: "花费", value: formatCurrency(item.spend) },
                       { label: "销售额", value: formatCurrency(item.adSales) },
                       { label: "ACOS", value: formatPercent(item.acos), color: getAcosColor(item.acosStatus) },
                       { label: "CVR", value: formatPercent(item.cvr) },
                       { label: "CTR", value: formatPercent(item.ctr) },
+                      { label: "CPC", value: formatCurrency(item.cpc) },
                       { label: "点击", value: formatNumber(item.clicks) },
                     ].map((m) => (
                       <div key={m.label} className="text-center">

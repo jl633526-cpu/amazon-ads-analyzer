@@ -205,9 +205,11 @@ export interface CampaignSuggestion {
   spend: number;
   adSales: number;
   orders: number;
+  clicks: number;
   acos: number | null;
   ctr: number | null;
   cvr: number | null;
+  cpc: number | null;
   issues: string[];
   actions: string[];
   priority: "P1" | "P2" | "P3";
@@ -286,6 +288,7 @@ export function calcCampaignSuggestions(campaignRows: StandardRow[]): CampaignSu
       if (priority !== "P1") priority = "P2";
     }
 
+    const cpc = clicks > 0 ? spend / clicks : null;
     if (issues.length > 0) {
       suggestions.push({
         campaignName: name,
@@ -294,9 +297,11 @@ export function calcCampaignSuggestions(campaignRows: StandardRow[]): CampaignSu
         spend,
         adSales,
         orders,
+        clicks,
         acos,
         ctr,
         cvr,
+        cpc,
         issues,
         actions,
         priority,
@@ -331,6 +336,7 @@ export interface TargetingSuggestion {
   acos: number | null;
   ctr: number | null;
   cvr: number | null;
+  cpc: number | null;
   issues: string[];
   actions: string[];
   priority: "P1" | "P2" | "P3";
@@ -389,6 +395,7 @@ export function calcTargetingSuggestions(targetingRows: StandardRow[]): Targetin
       priority = "P1";
     }
 
+    const cpc = clicks > 0 ? spend / clicks : null;
     if (issues.length > 0) {
       suggestions.push({
         campaignName: row.campaign_name ?? "",
@@ -403,6 +410,7 @@ export function calcTargetingSuggestions(targetingRows: StandardRow[]): Targetin
         acos,
         ctr,
         cvr,
+        cpc,
         issues,
         actions,
         priority,

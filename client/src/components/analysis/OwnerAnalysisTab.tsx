@@ -153,7 +153,7 @@ export default function OwnerAnalysisTab({ data, ownerFilter = "ALL" }: Props) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/50 bg-muted/20">
-                {["排名", "负责人", "花费", "销售额", "ACOS", "ROAS", "CVR", "CTR", "订单", "浪费率", "Campaign数"].map((h) => (
+                {["排名", "负责人", "花费", "销售额", "ACOS", "ROAS", "CVR", "CTR", "CPC", "订单", "浪费率", "Campaign数"].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">
                     {h}
                   </th>
@@ -182,6 +182,7 @@ export default function OwnerAnalysisTab({ data, ownerFilter = "ALL" }: Props) {
                     {formatPercent(owner.cvr)}
                   </td>
                   <td className="px-4 py-3 font-mono text-foreground">{formatPercent(owner.ctr)}</td>
+                  <td className="px-4 py-3 font-mono text-foreground">{formatCurrency(owner.cpc)}</td>
                   <td className="px-4 py-3 text-foreground">{formatNumber(owner.orders)}</td>
                   <td className="px-4 py-3">
                     <span className={`font-mono ${(owner.wasteRate ?? 0) > 0.3 ? "text-red-400" : "text-muted-foreground"}`}>

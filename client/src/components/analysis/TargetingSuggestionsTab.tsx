@@ -14,6 +14,7 @@ interface TargetingSuggestion {
   acos: number | null;
   ctr: number | null;
   cvr: number | null;
+  cpc: number | null;
   issues: string[];
   actions: string[];
   priority: "P1" | "P2" | "P3";
@@ -77,7 +78,7 @@ export default function TargetingSuggestionsTab({ data, ownerFilter = "ALL", own
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/50 bg-muted/20">
-                {["优先级", "关键词/ASIN", "匹配类型", "Campaign", "负责人", "花费", "销售额", "ACOS", "CVR", "点击", "订单", "问题", "建议动作"].map((h) => (
+                {["优先级", "关键词/ASIN", "匹配类型", "Campaign", "负责人", "花费", "销售额", "ACOS", "CVR", "CPC", "点击", "订单", "问题", "建议动作"].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">
                     {h}
                   </th>
@@ -114,6 +115,7 @@ export default function TargetingSuggestionsTab({ data, ownerFilter = "ALL", own
                     {formatPercent(item.acos)}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-foreground">{formatPercent(item.cvr)}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-foreground">{formatCurrency(item.cpc)}</td>
                   <td className="px-4 py-3 font-mono text-xs text-foreground">{formatNumber(item.clicks)}</td>
                   <td className="px-4 py-3 text-xs text-foreground">{formatNumber(item.orders)}</td>
                   <td className="px-4 py-3 max-w-[200px]">
