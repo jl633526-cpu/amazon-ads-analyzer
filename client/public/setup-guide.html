@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>亚马逊广告智能分析系统 — Manus 搭建指令</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0a0f1a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      line-height: 1.7;
+    }
+    .hero {
+      background: linear-gradient(135deg, #0a0f1a 0%, #0d1f35 50%, #0a1628 100%);
+      border-bottom: 1px solid rgba(0,212,200,0.15);
+      padding: 60px 24px 48px;
+      text-align: center;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(0,212,200,0.1);
+      border: 1px solid rgba(0,212,200,0.3);
+      color: #00d4c8;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 6px 14px;
+      border-radius: 20px;
+      margin-bottom: 20px;
+    }
+    h1 {
+      font-size: clamp(28px, 5vw, 42px);
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 12px;
+      letter-spacing: -0.5px;
+    }
+    h1 span { color: #00d4c8; }
+    .subtitle {
+      color: #94a3b8;
+      font-size: 16px;
+      max-width: 560px;
+      margin: 0 auto 32px;
+    }
+    .steps-row {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .step-badge {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 13px;
+      color: #cbd5e1;
+    }
+    .step-badge strong { color: #00d4c8; }
+
+    .container { max-width: 860px; margin: 0 auto; padding: 48px 24px 80px; }
+
+    .section {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 32px;
+      margin-bottom: 24px;
+    }
+    .section-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #f1f5f9;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-title .icon {
+      width: 32px; height: 32px;
+      background: rgba(0,212,200,0.12);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+
+    /* 复制框 */
+    .copy-box {
+      background: #060d18;
+      border: 1px solid rgba(0,212,200,0.2);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .copy-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: rgba(0,212,200,0.06);
+      border-bottom: 1px solid rgba(0,212,200,0.15);
+    }
+    .copy-label { font-size: 12px; color: #00d4c8; font-weight: 500; letter-spacing: 0.5px; }
+    .copy-btn {
+      display: flex; align-items: center; gap: 6px;
+      background: rgba(0,212,200,0.15);
+      border: 1px solid rgba(0,212,200,0.3);
+      color: #00d4c8;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 6px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .copy-btn:hover { background: rgba(0,212,200,0.25); }
+    .copy-btn.copied { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.4); color: #4ade80; }
+    .copy-content {
+      padding: 20px;
+      font-size: 14px;
+      color: #cbd5e1;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 420px;
+      overflow-y: auto;
+      line-height: 1.8;
+    }
+    .copy-content::-webkit-scrollbar { width: 6px; }
+    .copy-content::-webkit-scrollbar-track { background: transparent; }
+    .copy-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+
+    /* 功能列表 */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 12px;
+    }
+    .feature-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 10px;
+      padding: 16px;
+    }
+    .feature-card .f-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #f1f5f9;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .feature-card .f-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #00d4c8;
+      flex-shrink: 0;
+    }
+    .feature-card .f-desc {
+      font-size: 13px;
+      color: #64748b;
+      line-height: 1.6;
+    }
+
+    /* 步骤说明 */
+    .how-steps { display: flex; flex-direction: column; gap: 16px; }
+    .how-step {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+    .step-num {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: rgba(0,212,200,0.12);
+      border: 1px solid rgba(0,212,200,0.3);
+      color: #00d4c8;
+      font-size: 14px;
+      font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .step-text { font-size: 15px; color: #cbd5e1; padding-top: 4px; }
+    .step-text strong { color: #f1f5f9; }
+
+    /* 规则表格 */
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th {
+      text-align: left;
+      padding: 10px 14px;
+      background: rgba(0,212,200,0.06);
+      color: #94a3b8;
+      font-weight: 500;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      color: #cbd5e1;
+    }
+    tr:last-child td { border-bottom: none; }
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .tag-green { background: rgba(34,197,94,0.12); color: #4ade80; }
+    .tag-yellow { background: rgba(234,179,8,0.12); color: #facc15; }
+    .tag-red { background: rgba(239,68,68,0.12); color: #f87171; }
+    .tag-blue { background: rgba(59,130,246,0.12); color: #60a5fa; }
+
+    footer {
+      text-align: center;
+      padding: 32px 24px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      color: #475569;
+      font-size: 13px;
+    }
+    footer a { color: #00d4c8; text-decoration: none; }
+  </style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="badge">🚀 一键搭建</div>
+  <h1>亚马逊广告<span>智能分析</span>系统</h1>
+  <p class="subtitle">基于 Manus AI 搭建的可视化广告分析平台，上传报表 5 秒生成完整运营优化方案</p>
+  <div class="steps-row">
+    <div class="step-badge"><strong>Step 1</strong> 登录 Manus</div>
+    <div class="step-badge"><strong>Step 2</strong> 新建对话</div>
+    <div class="step-badge"><strong>Step 3</strong> 粘贴搭建指令</div>
+    <div class="step-badge"><strong>Step 4</strong> 等待自动搭建完成</div>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- 使用方法 -->
+  <div class="section">
+    <div class="section-title">
+      <div class="icon">📋</div>
+      如何搭建属于你的系统
+    </div>
+    <div class="how-steps">
+      <div class="how-step">
+        <div class="step-num">1</div>
+        <div class="step-text">访问 <strong><a href="https://manus.im" target="_blank" style="color:#00d4c8">manus.im</a></strong>，登录或注册你的 Manus 账号（免费）</div>
+      </div>
+      <div class="how-step">
+        <div class="step-num">2</div>
+        <div class="step-text">点击"<strong>新建对话</strong>"，进入空白对话页面</div>
+      </div>
+      <div class="how-step">
+        <div class="step-num">3</div>
+        <div class="step-text">点击下方"<strong>复制搭建指令</strong>"按钮，将指令完整粘贴到对话框并发送</div>
+      </div>
+      <div class="how-step">
+        <div class="step-num">4</div>
+        <div class="step-text">Manus AI 会自动搭建系统，约 <strong>10-20 分钟</strong>完成，获得你专属的独立访问链接</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 搭建指令复制框 -->
+  <div class="section">
+    <div class="section-title">
+      <div class="icon">⚡</div>
+      搭建指令（点击复制后发给 Manus）
+    </div>
+    <div class="copy-box">
+      <div class="copy-header">
+        <span class="copy-label">MANUS 搭建指令</span>
+        <button class="copy-btn" onclick="copyPrompt(this)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          复制全部
+        </button>
+      </div>
+      <div class="copy-content" id="promptText">帮我搭建一套亚马逊广告智能分析 Web 系统，技术栈使用 React + TypeScript + tRPC + Express + MySQL，要求功能完整、界面专业，深色主题风格。
+
+【系统功能要求】
+
+1. 报表上传与解析
+支持同时上传最多 5 个 CSV/Excel 报表文件，自动识别报表类型：Business Report、Sponsored Products Campaign Report、Sponsored Products Targeting Report、Sponsored Products Search Term Report、Sponsored Products Advertised Product Report。标准化字段名称（Impressions、Clicks、CTR、CPC、Spend、Sales、Orders、ACOS、ROAS、CVR、Campaign Name 等），上传后自动触发后台分析，分析完成后跳转到结果页。
+
+2. 负责人识别规则
+从 Campaign Name 中按完整 token 匹配（token 由 -、_、空格、括号分隔），识别以下负责人：
+LY=李艳；LCH=李彩华；CL1=曹力（必须优先于 CL 匹配）；CL=陈黎；HST=黄舒婷；HYD=胡宜东；LLT=罗丽婷；CST=陈诗婷；SR=申荣；SLJ=孙琳洁。
+
+3. 广告健康度阈值
+CVR：优秀≥20%；合规15%；预警12%-15%；严重<12%；极危<10%
+CTR：优秀≥1.0%；合规0.4%；预警0.2%-0.4%；问题<0.1%
+ACOS：蓝线<50%；合规60%-70%；预警80%-100%；红线高危120%；极危150%；刷新红线>180%
+否词规则：Clicks > 20 且 Orders = 0
+亏损红线：每单亏损 > $8
+
+4. 分析结果展示（6个Tab页）
+
+Tab 1 — 账户总览：核心指标卡片（总花费、总销售额、总订单数、ACOS、CTR、CVR、CPC、ROAS）、负责人花费占比环形图、各负责人核心指标对比表格。
+
+Tab 2 — 负责人分析：每位负责人的花费、销售额、订单数、ACOS、CTR、CVR、浪费金额（Clicks>20且0单的花费）、红线广告数量，支持按指标排序，颜色分级（绿色=优秀、黄色=预警、红色=红线）。
+
+Tab 3 — Campaign 建议：识别高花费高ACOS、0单Campaign、低CTR、低CVR、预算不足、可放大Campaign，优先级标签P1/P2/P3/P4，建议动作列（暂停、降竞价、加预算、观察等）。
+
+Tab 4 — Targeting 建议：关键词/ASIN层级分析，优秀（P4）、合规、预警（P3）、红线（P1/P2）分类展示，包含匹配类型、花费、ACOS、CVR、CTR、建议动作。
+
+Tab 5 — Search Term 清单：包含否词清单、转精准清单、高价值词、亏损词、无效词、潜力词、花费TOP词、匹配类型分析（精确/词组/广泛/自动各类型的展示量/点击量/CTR/花费/销售额/CVR/ACOS/ROAS，花费占比环形图，合理性判断：精确匹配占比≥70%绿色合理、50%-70%橙色预警、<50%红色警告，支持按负责人筛选联动）。
+
+Tab 6 — 运营动作清单：完整动作表（优先级、负责人、Campaign、Ad Group、对象类型、Targeting/Search Term/ASIN、核心数据、问题判断、建议动作），支持按P1/P2/P3/P4筛选，支持导出CSV。
+
+5. 全局功能
+- 顶部负责人筛选器：选择后所有Tab数据联动过滤
+- 所有表格表头固定（sticky thead），滚动时表头始终可见
+- 历史分析记录页（Dashboard）：查看所有历史分析任务
+- 分享链接功能：每条已完成的分析任务可生成唯一分享链接（48位随机token），分享链接无需登录即可查看完整分析结果（只读），分享页面顶部显示"只读分享"标识
+- 用户登录：使用 Manus OAuth 登录，每个用户数据完全隔离
+
+6. 界面设计
+深色主题（dark mode），主色调青色/蓝绿色（teal/cyan），字体 Inter，数据颜色分级（绿色=优秀、黄色=预警、红色=红线），所有表格支持横向滚动，表头固定，移动端友好的响应式布局。</div>
+    </div>
+  </div>
+
+  <!-- 系统功能 -->
+  <div class="section">
+    <div class="section-title">
+      <div class="icon">✨</div>
+      系统核心功能
+    </div>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="f-title"><div class="f-dot"></div>智能报表解析</div>
+        <div class="f-desc">自动识别 5 类广告报表，标准化字段，无需手动整理数据</div>
+      </div>
+      <div class="feature-card">
+        <div class="f-title"><div class="f-dot"></div>负责人识别</div>
+        <div class="f-desc">从 Campaign Name 自动识别 10 位负责人，CL1 优先于 CL 匹配</div>
+      </div>
+      <div class="feature-card">
+        <div class="f-title"><div class="f-dot"></div>6 大分析模块</div>
+        <div class="f-desc">账户总览、负责人分析、Campaign建议、Targeting建议、Search Term清单、运营动作清单</div>
+      </div>
+      <div class="feature-card">
+        <div class="f-title"><div class="f-dot"></div>匹配类型分析</div>
+        <div class="f-desc">精确/词组/广泛/自动占比环形图，精确≥70%判定投放结构合理</div>
+      </div>
+      <div class="feature-card">
+        <div class="f-title"><div class="f-dot"></div>负责人筛选联动</div>
+        <div class="f-desc">顶部选择负责人后，所有 Tab 数据同步过滤，快速定位问题</div>
+      </div>
+      <div class="feature-card">
+        <div class="f-title"><div class="f-dot"></div>分享链接</div>
+        <div class="f-desc">一键生成分享链接，无需登录即可查看完整分析报告（只读）</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 负责人规则 -->
+  <div class="section">
+    <div class="section-title">
+      <div class="icon">👥</div>
+      负责人识别规则（已内置）
+    </div>
+    <table>
+      <thead>
+        <tr><th>Campaign 缩写</th><th>负责人</th><th>优先级</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>LY</td><td>李艳</td><td><span class="tag tag-blue">标准</span></td></tr>
+        <tr><td>LCH</td><td>李彩华</td><td><span class="tag tag-blue">标准</span></td></tr>
+        <tr><td>CL1</td><td>曹力</td><td><span class="tag tag-green">优先匹配</span></td></tr>
+        <tr><td>CL</td><td>陈黎</td><td><span class="tag tag-yellow">CL1 后匹配</span></td></tr>
+        <tr><td>HST</td><td>黄舒婷</td><td><span class="tag tag-blue">标准</span></td></tr>
+        <tr><td>HYD</td><td>胡宜东</td><td><span class="tag tag-blue">标准</span></td></tr>
+        <tr><td>LLT</td><td>罗丽婷</td><td><span class="tag tag-blue">标准</span></td></tr>
+        <tr><td>CST</td><td>陈诗婷</td><td><span class="tag tag-blue">标准</span></td></tr>
+        <tr><td>SR</td><td>申荣</td><td><span class="tag tag-blue">标准</span></td></tr>
+        <tr><td>SLJ</td><td>孙琳洁</td><td><span class="tag tag-blue">标准</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 健康度阈值 -->
+  <div class="section">
+    <div class="section-title">
+      <div class="icon">📊</div>
+      广告健康度阈值（已内置）
+    </div>
+    <table>
+      <thead>
+        <tr><th>指标</th><th>优秀/蓝线</th><th>合规</th><th>预警</th><th>红线</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>CVR</strong></td>
+          <td><span class="tag tag-green">≥ 20%</span></td>
+          <td>15%</td>
+          <td><span class="tag tag-yellow">12%-15%</span></td>
+          <td><span class="tag tag-red">&lt; 12%（极危 &lt;10%）</span></td>
+        </tr>
+        <tr>
+          <td><strong>CTR</strong></td>
+          <td><span class="tag tag-green">≥ 1.0%</span></td>
+          <td>0.4%</td>
+          <td><span class="tag tag-yellow">0.2%-0.4%</span></td>
+          <td><span class="tag tag-red">&lt; 0.1%</span></td>
+        </tr>
+        <tr>
+          <td><strong>ACOS</strong></td>
+          <td><span class="tag tag-green">&lt; 50%</span></td>
+          <td>60%-70%</td>
+          <td><span class="tag tag-yellow">80%-100%</span></td>
+          <td><span class="tag tag-red">120% 高危 / 150% 极危 / &gt;180% 刷新红线</span></td>
+        </tr>
+        <tr>
+          <td><strong>否词</strong></td>
+          <td>—</td>
+          <td>—</td>
+          <td>—</td>
+          <td><span class="tag tag-red">Clicks &gt; 20 且 Orders = 0</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<footer>
+  由 <a href="https://manus.im" target="_blank">Manus AI</a> 驱动 · 亚马逊广告智能分析系统 V1
+</footer>
+
+<script>
+function copyPrompt(btn) {
+  const text = document.getElementById('promptText').innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.classList.add('copied');
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> 已复制！';
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> 复制全部';
+    }, 2500);
+  }).catch(() => {
+    alert('请手动选中并复制上方文字');
+  });
+}
+</script>
+</body>
+</html>
