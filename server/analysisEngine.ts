@@ -724,18 +724,49 @@ export function calcSearchTermAnalysis(searchTermRows: StandardRow[]): SearchTer
   const avgCvr = totalClicks > 0 ? totalOrders / totalClicks : null;
 
   // ============================================================
-  // 词根分析：提取每个搜索词的首词作为词根，按词根聚合
+  // 词根分析：自适应词根提取（优先选择覆盖最多搜索词的粒度）
   // ============================================================
+
+  // 第一步：统计每个候选词根（1词/2词/3词）覆盖了多少个搜索词
+  const rootCoverage = new Map<string, Set<string>>(); // root -> set of searchTerms
+  for (const agg of aggregates) {
+    const words = agg.searchTerm.split(/\s+/).filter(Boolean);
+    if (words.length === 0) continue;
+    const candidates: string[] = [words[0]];
+    if (words.length >= 2) candidates.push(words.slice(0, 2).join(" "));
+    if (words.length >= 3) candidates.push(words.slice(0, 3).join(" "));
+    for (const c of candidates) {
+      if (!rootCoverage.has(c)) rootCoverage.set(c, new Set());
+      rootCoverage.get(c)!.add(agg.searchTerm);
+    }
+  }
+
+  // 第二步：为每个搜索词选择最优词根
+  // 规则：优先选择最长且覆盖>=2个词的词根；若3词根也覆盖>=2个词则用3词根
+  const termToRoot = new Map<string, string>();
+  for (const agg of aggregates) {
+    const words = agg.searchTerm.split(/\s+/).filter(Boolean);
+    if (words.length === 0) continue;
+    let chosen = words[0]; // 默认1词根
+    if (words.length >= 2) {
+      const r2 = words.slice(0, 2).join(" ");
+      if ((rootCoverage.get(r2)?.size ?? 0) >= 2) chosen = r2;
+    }
+    if (words.length >= 3) {
+      const r3 = words.slice(0, 3).join(" ");
+      if ((rootCoverage.get(r3)?.size ?? 0) >= 2) chosen = r3;
+    }
+    termToRoot.set(agg.searchTerm, chosen);
+  }
+
+  // 第三步：按最优词根聚合
   const rootMap = new Map<string, {
     terms: Map<string, number>; // term -> spend
     impressions: number; clicks: number; spend: number; orders: number; sales: number;
   }>();
 
   for (const agg of aggregates) {
-    const words = agg.searchTerm.split(/\s+/).filter(Boolean);
-    if (words.length === 0) continue;
-    // 词根策略：单词直接用该词；多词取前两词组合作为词根
-    const root = words.length === 1 ? words[0] : words.slice(0, 2).join(" ");
+    const root = termToRoot.get(agg.searchTerm) ?? agg.searchTerm.split(/\s+/)[0];
     if (!rootMap.has(root)) {
       rootMap.set(root, { terms: new Map(), impressions: 0, clicks: 0, spend: 0, orders: 0, sales: 0 });
     }
@@ -756,7 +787,7 @@ export function calcSearchTermAnalysis(searchTermRows: StandardRow[]): SearchTer
       const ctr = v.impressions > 0 ? v.clicks / v.impressions : null;
       const topTerms = Array.from(v.terms.entries())
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
+        .slice(0, 10)
         .map(([t]) => t);
       // 词根标签判断
       let label: WordRootAggregate["label"] = "normal";
@@ -767,7 +798,7 @@ export function calcSearchTermAnalysis(searchTermRows: StandardRow[]): SearchTer
       return { root, termCount: v.terms.size, totalImpressions: v.impressions, totalClicks: v.clicks, totalSpend: v.spend, totalOrders: v.orders, totalSales: v.sales, acos, cvr, ctr, topTerms, label };
     })
     .sort((a, b) => b.totalSpend - a.totalSpend)
-    .slice(0, 200);
+    .slice(0, 500); // 扩大到500条，避免低花费词根被截断
 
   // ============================================================
   // 匹配类型维度分析
