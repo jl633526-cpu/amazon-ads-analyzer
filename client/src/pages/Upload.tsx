@@ -35,45 +35,40 @@ interface UploadedFile {
 const REPORT_SLOTS = [
   {
     type: "business_report",
-    label: "产品表现报告",
-    sublabel: "Business Report",
-    desc: "领星：产品表现 | 亚马逊：Business Report",
+    label: "Business Report",
+    desc: "Session、转化率、自然销量数据",
     color: "border-emerald-400/30 bg-emerald-400/5",
     iconColor: "text-emerald-400",
     required: false,
   },
   {
     type: "campaign_report",
-    label: "广告活动报告",
-    sublabel: "Campaign Report",
-    desc: "领星：广告活动报告 | 亚马逊：Campaign Report",
+    label: "Campaign Report",
+    desc: "广告活动层级表现数据",
     color: "border-blue-400/30 bg-blue-400/5",
     iconColor: "text-blue-400",
     required: true,
   },
   {
     type: "targeting_report",
-    label: "商品投放报告",
-    sublabel: "Targeting Report",
-    desc: "领星：投放/商品投放报告 | 亚马逊：Targeting Report",
+    label: "Targeting Report",
+    desc: "关键词/ASIN投放表现数据",
     color: "border-purple-400/30 bg-purple-400/5",
     iconColor: "text-purple-400",
     required: false,
   },
   {
     type: "search_term_report",
-    label: "用户搜索词报告",
-    sublabel: "Search Term Report",
-    desc: "领星：用户搜索词报告 | 亚马逊：Search Term Report",
+    label: "Search Term Report",
+    desc: "真实搜索词分析数据",
     color: "border-yellow-400/30 bg-yellow-400/5",
     iconColor: "text-yellow-400",
     required: false,
   },
   {
     type: "advertised_product_report",
-    label: "推广商品报告",
-    sublabel: "Advertised Product Report",
-    desc: "领星：广告（推广的商品）报告 | 亚马逊：Advertised Product",
+    label: "Advertised Product Report",
+    desc: "被推广产品表现数据",
     color: "border-orange-400/30 bg-orange-400/5",
     iconColor: "text-orange-400",
     required: false,
@@ -269,7 +264,7 @@ export default function Upload() {
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-foreground mb-2">上传广告报表</h1>
           <p className="text-muted-foreground">
-            支持领星ERP导出格式及亚马逊后台原始报表（5种报表），系统自动识别格式并进行分析
+            支持5类亚马逊广告报表，系统将自动识别类型并进行分析
           </p>
         </div>
 

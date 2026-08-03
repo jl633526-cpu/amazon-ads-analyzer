@@ -1,17 +1,12 @@
 /**
  * 亚马逊广告报表解析引擎
  * 负责：报表类型识别、字段标准化、数据解析
- *
- * 支持两种数据源格式：
- * 1. 亚马逊后台原始报告（英文列名）
- * 2. 领星ERP导出报告（中文列名）
- *
- * 领星报告对应关系：
- *   广告活动报告     → Campaign Report
- *   商品投放报告     → Targeting Report
- *   用户搜索词报告   → Search Term Report
- *   广告（推广的商品）报告 → Advertised Product Report
- *   产品表现报告     → Business Report
+ * 
+ * 修复记录（2026-07-09）：
+ * 1. 报表类型识别顺序：Search Term > Targeting > Business > Advertised Product > Campaign
+ * 2. 字段名末尾空格：所有 get() 查找时对 raw 的 key 做 trim 处理
+ * 3. Campaign Report 预算列：Budget Amount
+ * 4. Business Report 字段：（子）ASIN、转化率 - 总计、推荐报价（推荐报价展示位）百分比
  */
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
@@ -91,12 +86,6 @@ export const OWNER_RULES: Array<{
   { code: "SR", name: "申荣", priority: 10 },
 ];
 
-// 负责人中文名 → code 映射（用于领星产品表现报告直接读取负责人列）
-const OWNER_NAME_TO_CODE: Record<string, string> = {};
-for (const o of OWNER_RULES) {
-  OWNER_NAME_TO_CODE[o.name] = o.code;
-}
-
 // 按优先级排序（数字越小越优先）
 const SORTED_OWNERS = [...OWNER_RULES].sort((a, b) => a.priority - b.priority);
 
@@ -130,71 +119,26 @@ export function identifyOwner(campaignName: string, portfolioName?: string): {
 }
 
 // ============================================================
-// 领星匹配方式 → 标准 Match Type 映射
-// ============================================================
-const LINGXING_MATCH_TYPE_MAP: Record<string, string> = {
-  "紧密匹配": "EXACT",
-  "广泛匹配": "BROAD",
-  "词组匹配": "PHRASE",
-  "同类商品": "TARGETING_EXPRESSION",
-  "精准商品": "TARGETING_EXPRESSION",
-  "自动投放": "AUTO",
-  "手动投放": "MANUAL",
-  "--": "UNKNOWN",
-};
-
-function normalizeLingxingMatchType(val: string | undefined): string {
-  if (!val) return "UNKNOWN";
-  return LINGXING_MATCH_TYPE_MAP[val.trim()] ?? val.trim();
-}
-
-// ============================================================
-// 报表类型识别（同时支持亚马逊原始格式和领星格式）
+// 报表类型识别
 // ============================================================
 export function detectReportType(headers: string[]): ReportType {
+  // 使用 trim 后的 headerSet 进行精确匹配
   const headerSet = new Set(headers.map((h) => h.trim()));
   const hasHeader = (key: string) =>
     headerSet.has(key) || headers.some((h) => h.trim().includes(key));
 
-  // ---- 领星格式识别 ----
-  // 领星用户搜索词报告：含"用户搜索词"列
-  if (hasHeader("用户搜索词")) {
-    return "search_term_report";
-  }
-
-  // 领星商品投放报告：含"投放"列，不含"用户搜索词"列
-  // 注意：领星商品投放报告没有"匹配方式"列，用"投放"列+无"用户搜索词"列区分
-  if (hasHeader("投放") && !hasHeader("用户搜索词")) {
-    return "targeting_report";
-  }
-
-  // 领星广告（推广的商品）报告：含"ASIN"列 + "MSKU"列
-  if (hasHeader("MSKU") && hasHeader("ASIN") && hasHeader("广告活动")) {
-    return "advertised_product_report";
-  }
-
-  // 领星广告活动报告：含"广告活动"列 + "有效状态"列
-  if (hasHeader("广告活动") && hasHeader("有效状态")) {
-    return "campaign_report";
-  }
-
-  // 领星产品表现报告：含"Sessions-Total"或"TACOS"列
-  if (hasHeader("Sessions-Total") || hasHeader("TACOS") || hasHeader("负责人")) {
-    return "business_report";
-  }
-
-  // ---- 亚马逊原始格式识别 ----
   // 1. Search Term Report — 唯一标识：Customer Search Term
   if (hasHeader("Customer Search Term")) {
     return "search_term_report";
   }
 
-  // 2. Targeting Report — 唯一标识：Top-of-search Impression Share
+  // 2. Targeting Report — 唯一标识：Top-of-search Impression Share + Targeting + Match Type
+  //    注意：必须在 Advertised Product 之前检查，因为 Targeting Report 也含 "7 Day Advertised SKU Units"
   if (hasHeader("Top-of-search Impression Share") || hasHeader("Top-of-search")) {
     return "targeting_report";
   }
 
-  // 3. Business Report — 唯一标识：会话数 或 Sessions - Total
+  // 3. Business Report — 唯一标识：中文会话数 或 Sessions - Total
   if (
     hasHeader("会话数 - 总计") ||
     hasHeader("Sessions - Total") ||
@@ -203,7 +147,7 @@ export function detectReportType(headers: string[]): ReportType {
     return "business_report";
   }
 
-  // 4. Advertised Product Report — 唯一标识：Advertised SKU + Advertised ASIN
+  // 4. Advertised Product Report — 唯一标识：Advertised SKU + Advertised ASIN（精确列名，非包含）
   if (headerSet.has("Advertised SKU") || headerSet.has("Advertised ASIN")) {
     return "advertised_product_report";
   }
@@ -217,7 +161,7 @@ export function detectReportType(headers: string[]): ReportType {
 }
 
 // ============================================================
-// 数值解析工具
+// 字段标准化映射
 // ============================================================
 function parseNum(val: unknown): number | undefined {
   if (val === null || val === undefined || val === "") return undefined;
@@ -228,40 +172,15 @@ function parseNum(val: unknown): number | undefined {
 
 function parsePct(val: unknown): number | undefined {
   if (val === null || val === undefined || val === "") return undefined;
-  const str = String(val).trim();
-  // 领星特殊值处理：'有花费无销售额'、'有花费无订单'、'--' 等
-  if (str === "有花费无销售额" || str === "有花费无订单" || str === "--" || str === "0%") {
-    // "0%" 是真实的0，其他特殊值返回 undefined（无意义）
-    if (str === "0%") return 0;
-    return undefined;
-  }
-  const cleaned = str.replace(/[%\s]/g, "");
-  const n = parseFloat(cleaned);
+  const str = String(val).replace(/[%\s]/g, "");
+  const n = parseFloat(str);
   if (isNaN(n)) return undefined;
   // 如果已经是小数形式（0.xx）则直接返回，否则除以100
   return n > 1 ? n / 100 : n;
 }
 
-// ============================================================
-// 判断是否为领星格式（通过列名特征）
-// ============================================================
-function isLingxingFormat(headers: string[]): boolean {
-  const headerSet = new Set(headers.map((h) => h.trim()));
-  return (
-    headerSet.has("店铺名称") ||
-    headerSet.has("花费-本币") ||
-    headerSet.has("广告销售额-本币") ||
-    headerSet.has("ACoS") ||
-    headerSet.has("匹配方式") ||
-    headerSet.has("用户搜索词")
-  );
-}
-
-// ============================================================
-// 字段标准化映射
-// ============================================================
-function normalizeRow(raw: Record<string, unknown>, reportType: ReportType, lingxing: boolean): StandardRow {
-  // 构建 trimmed key → value 的映射，解决列名末尾空格问题
+function normalizeRow(raw: Record<string, unknown>, reportType: ReportType): StandardRow {
+  // 构建 trimmed key → original key 的映射，解决列名末尾空格问题
   const trimmedRaw: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(raw)) {
     trimmedRaw[k.trim()] = v;
@@ -270,10 +189,11 @@ function normalizeRow(raw: Record<string, unknown>, reportType: ReportType, ling
   const get = (keys: string[]): unknown => {
     for (const k of keys) {
       const trimK = k.trim();
+      // 先精确匹配 trimmed key
       if (trimmedRaw[trimK] !== undefined && trimmedRaw[trimK] !== null && trimmedRaw[trimK] !== "") {
         return trimmedRaw[trimK];
       }
-      // 包含匹配（处理列名带后缀的情况）
+      // 再做包含匹配（处理列名带后缀空格的情况）
       for (const [rawKey, rawVal] of Object.entries(trimmedRaw)) {
         if (rawKey.includes(trimK) || trimK.includes(rawKey)) {
           if (rawVal !== undefined && rawVal !== null && rawVal !== "") {
@@ -287,199 +207,95 @@ function normalizeRow(raw: Record<string, unknown>, reportType: ReportType, ling
 
   const row: StandardRow = { report_type: reportType };
 
-  if (lingxing) {
-    // ============================================================
-    // 领星格式解析
-    // ============================================================
-    if (reportType === "business_report") {
-      // 领星产品表现报告
-      row.asin = String(get(["ASIN", "父ASIN"]) ?? "");
-      row.sku = String(get(["MSKU", "SKU"]) ?? "");
-      // 领星产品表现报告直接有"负责人"列
-      const ownerNameRaw = String(get(["负责人"]) ?? "");
-      if (ownerNameRaw && OWNER_NAME_TO_CODE[ownerNameRaw]) {
-        row.owner_name = ownerNameRaw;
-        row.owner_code = OWNER_NAME_TO_CODE[ownerNameRaw];
-      }
-      row.sessions = parseNum(get(["Sessions-Total"]));
-      row.page_views = parseNum(get(["PV-Total"]));
-      row.br_cvr = parsePct(get(["CVR", "销量CVR"]));
-      row.total_units = parseNum(get(["销量", "广告销量"]));
-      row.total_sales = parseNum(get(["销售额", "广告销售额"]));
-      row.buybox_pct = parsePct(get(["Buybox赢得率"]));
-      row.spend = parseNum(get(["广告花费", "SP广告费"]));
-      row.ad_sales = parseNum(get(["广告销售额", "SP广告销售额"]));
-      row.acos = parsePct(get(["ACOS"]));
-      row.ctr = parsePct(get(["CTR"]));
-      row.cpc = parseNum(get(["CPC"]));
-      row.roas = parseNum(get(["ROAS"]));
-    } else if (reportType === "campaign_report") {
-      // 领星广告活动报告
-      row.campaign_name = String(get(["广告活动"]) ?? "");
-      row.portfolio_name = String(get(["广告组合"]) ?? "");
-      row.ad_group_name = String(get(["广告组"]) ?? "");
-      row.status = String(get(["有效状态"]) ?? "");
-      row.impressions = parseNum(get(["曝光量"]));
-      row.clicks = parseNum(get(["点击"]));
-      row.spend = parseNum(get(["花费-本币"]));
-      row.ad_sales = parseNum(get(["广告销售额-本币"]));
-      row.orders = parseNum(get(["广告订单"]));
-      row.ctr = parsePct(get(["CTR"]));
-      row.cpc = parseNum(get(["CPC-本币"]));
-      row.acos = parsePct(get(["ACoS"]));
-      row.roas = parseNum(get(["ROAS"]));
-      row.ad_cvr = parsePct(get(["CVR"]));
-    } else if (reportType === "targeting_report") {
-      // 领星商品投放报告
-      row.campaign_name = String(get(["广告活动"]) ?? "");
-      row.portfolio_name = String(get(["广告组合"]) ?? "");
-      row.ad_group_name = String(get(["广告组"]) ?? "");
-      row.targeting = String(get(["投放"]) ?? "");
-      const rawMatchType = String(get(["匹配方式"]) ?? "");
-      row.match_type = normalizeLingxingMatchType(rawMatchType);
-      row.impressions = parseNum(get(["曝光量"]));
-      row.clicks = parseNum(get(["点击"]));
-      row.spend = parseNum(get(["花费-本币"]));
-      row.ad_sales = parseNum(get(["广告销售额-本币"]));
-      row.orders = parseNum(get(["广告订单"]));
-      row.ctr = parsePct(get(["CTR"]));
-      row.cpc = parseNum(get(["CPC-本币"]));
-      row.acos = parsePct(get(["ACoS"]));
-      row.roas = parseNum(get(["ROAS"]));
-      row.ad_cvr = parsePct(get(["CVR"]));
-    } else if (reportType === "search_term_report") {
-      // 领星用户搜索词报告
-      row.campaign_name = String(get(["广告活动"]) ?? "");
-      row.portfolio_name = String(get(["广告组合"]) ?? "");
-      row.ad_group_name = String(get(["广告组"]) ?? "");
-      row.targeting = String(get(["投放"]) ?? "");
-      const rawMatchType = String(get(["匹配方式"]) ?? "");
-      row.match_type = normalizeLingxingMatchType(rawMatchType);
-      row.search_term = String(get(["用户搜索词"]) ?? "");
-      row.impressions = parseNum(get(["曝光量"]));
-      row.clicks = parseNum(get(["点击"]));
-      row.spend = parseNum(get(["花费-本币"]));
-      row.ad_sales = parseNum(get(["广告销售额-本币"]));
-      row.orders = parseNum(get(["广告订单"]));
-      row.ctr = parsePct(get(["CTR"]));
-      row.cpc = parseNum(get(["CPC-本币"]));
-      row.acos = parsePct(get(["ACoS"]));
-      row.roas = parseNum(get(["ROAS"]));
-      row.ad_cvr = parsePct(get(["CVR"]));
-    } else if (reportType === "advertised_product_report") {
-      // 领星广告（推广的商品）报告
-      row.campaign_name = String(get(["广告活动"]) ?? "");
-      row.portfolio_name = String(get(["广告组合"]) ?? "");
-      row.ad_group_name = String(get(["广告组"]) ?? "");
-      row.sku = String(get(["MSKU"]) ?? "");
-      row.asin = String(get(["ASIN"]) ?? "");
-      row.status = String(get(["广告有效状态"]) ?? "");
-      row.impressions = parseNum(get(["曝光量"]));
-      row.clicks = parseNum(get(["点击"]));
-      row.spend = parseNum(get(["花费-本币"]));
-      row.ad_sales = parseNum(get(["广告销售额-本币"]));
-      row.orders = parseNum(get(["广告订单"]));
-      row.ctr = parsePct(get(["CTR"]));
-      row.cpc = parseNum(get(["CPC-本币"]));
-      row.acos = parsePct(get(["ACoS"]));
-      row.roas = parseNum(get(["ROAS"]));
-      row.ad_cvr = parsePct(get(["CVR"]));
-    }
-  } else {
-    // ============================================================
-    // 亚马逊原始格式解析（保持原有逻辑不变）
-    // ============================================================
-    if (reportType === "business_report") {
-      row.asin = String(get(["（子）ASIN", "子ASIN", "子 ASIN", "Child ASIN", "ASIN"]) ?? "");
-      row.sku = String(get(["SKU"]) ?? "");
-      row.sessions = parseNum(get(["会话数 - 总计", "Sessions - Total", "Sessions"]));
-      row.page_views = parseNum(get(["页面浏览量 - 总计", "Page Views - Total", "Page Views"]));
-      row.br_cvr = parsePct(get(["转化率 - 总计", "Unit Session Percentage - Total", "Unit Session Percentage", "商品会话百分比"]));
-      row.total_units = parseNum(get(["已订购商品数量", "Units Ordered"]));
-      row.total_sales = parseNum(get(["已订购商品销售额", "Ordered Product Sales"]));
-      row.buybox_pct = parsePct(get([
-        "推荐报价（推荐报价展示位）百分比",
-        "推荐报价百分比",
-        "Buy Box Percentage",
-        "Featured Offer (Buy Box) Percentage"
-      ]));
-    } else if (reportType === "campaign_report") {
-      row.campaign_name = String(get(["Campaign Name"]) ?? "");
-      row.portfolio_name = String(get(["Portfolio name", "Portfolio Name"]) ?? "");
-      row.status = String(get(["Status", "Campaign Status"]) ?? "");
-      row.targeting_type = String(get(["Targeting Type"]) ?? "");
-      row.bidding_strategy = String(get(["Bidding strategy"]) ?? "");
-      row.budget = parseNum(get(["Budget Amount", "Budget"]));
-      row.impressions = parseNum(get(["Impressions"]));
-      row.clicks = parseNum(get(["Clicks"]));
-      row.spend = parseNum(get(["Spend"]));
-      row.ad_sales = parseNum(get(["7 Day Total Sales ($)", "7 Day Total Sales"]));
-      row.orders = parseNum(get(["7 Day Total Orders (#)", "7 Day Total Orders"]));
-      row.units = parseNum(get(["7 Day Total Units (#)", "7 Day Total Units"]));
-      row.ctr = parsePct(get(["Click-Thru Rate (CTR)", "CTR"]));
-      row.cpc = parseNum(get(["Cost Per Click (CPC)", "CPC"]));
-      row.acos = parsePct(get(["Total Advertising Cost of Sales (ACOS) %", "Total Advertising Cost of Sales (ACOS)"]));
-      row.roas = parseNum(get(["Total Return on Advertising Spend (ROAS)", "ROAS"]));
-      row.ad_cvr = parsePct(get(["7 Day Conversion Rate", "Conversion Rate"]));
-    } else if (reportType === "targeting_report") {
-      row.campaign_name = String(get(["Campaign Name"]) ?? "");
-      row.ad_group_name = String(get(["Ad Group Name"]) ?? "");
-      row.targeting = String(get(["Targeting"]) ?? "");
-      row.match_type = String(get(["Match Type"]) ?? "");
-      row.impressions = parseNum(get(["Impressions"]));
-      row.clicks = parseNum(get(["Clicks"]));
-      row.spend = parseNum(get(["Spend"]));
-      row.ad_sales = parseNum(get(["7 Day Total Sales ($)", "7 Day Total Sales"]));
-      row.orders = parseNum(get(["7 Day Total Orders (#)", "7 Day Total Orders"]));
-      row.units = parseNum(get(["7 Day Total Units (#)", "7 Day Total Units"]));
-      row.ctr = parsePct(get(["Click-Thru Rate (CTR)", "CTR"]));
-      row.cpc = parseNum(get(["Cost Per Click (CPC)", "CPC"]));
-      row.acos = parsePct(get(["Total Advertising Cost of Sales (ACOS) %", "Total Advertising Cost of Sales (ACOS)"]));
-      row.roas = parseNum(get(["Total Return on Advertising Spend (ROAS)", "ROAS"]));
-      row.ad_cvr = parsePct(get(["7 Day Conversion Rate", "Conversion Rate"]));
-      row.top_of_search_impression_share = parsePct(get(["Top-of-search Impression Share"]));
-    } else if (reportType === "search_term_report") {
-      row.campaign_name = String(get(["Campaign Name"]) ?? "");
-      row.portfolio_name = String(get(["Portfolio name", "Portfolio Name"]) ?? "");
-      row.ad_group_name = String(get(["Ad Group Name"]) ?? "");
-      row.targeting = String(get(["Targeting"]) ?? "");
-      row.match_type = String(get(["Match Type"]) ?? "");
-      row.search_term = String(get(["Customer Search Term"]) ?? "");
-      row.impressions = parseNum(get(["Impressions"]));
-      row.clicks = parseNum(get(["Clicks"]));
-      row.spend = parseNum(get(["Spend"]));
-      row.ad_sales = parseNum(get(["7 Day Total Sales ($)", "7 Day Total Sales"]));
-      row.orders = parseNum(get(["7 Day Total Orders (#)", "7 Day Total Orders"]));
-      row.units = parseNum(get(["7 Day Total Units (#)", "7 Day Total Units"]));
-      row.ctr = parsePct(get(["Click-Thru Rate (CTR)", "CTR"]));
-      row.cpc = parseNum(get(["Cost Per Click (CPC)", "CPC"]));
-      row.acos = parsePct(get(["Total Advertising Cost of Sales (ACOS) %", "Total Advertising Cost of Sales (ACOS)"]));
-      row.roas = parseNum(get(["Total Return on Advertising Spend (ROAS)", "ROAS"]));
-      row.ad_cvr = parsePct(get(["7 Day Conversion Rate", "Conversion Rate"]));
-    } else if (reportType === "advertised_product_report") {
-      row.campaign_name = String(get(["Campaign Name"]) ?? "");
-      row.ad_group_name = String(get(["Ad Group Name"]) ?? "");
-      row.sku = String(get(["Advertised SKU"]) ?? "");
-      row.asin = String(get(["Advertised ASIN"]) ?? "");
-      row.impressions = parseNum(get(["Impressions"]));
-      row.clicks = parseNum(get(["Clicks"]));
-      row.spend = parseNum(get(["Spend"]));
-      row.ad_sales = parseNum(get(["7 Day Total Sales ($)", "7 Day Total Sales"]));
-      row.orders = parseNum(get(["7 Day Total Orders (#)", "7 Day Total Orders"]));
-      row.units = parseNum(get(["7 Day Total Units (#)", "7 Day Total Units"]));
-      row.ctr = parsePct(get(["Click-Thru Rate (CTR)", "CTR"]));
-      row.cpc = parseNum(get(["Cost Per Click (CPC)", "CPC"]));
-      row.acos = parsePct(get(["Total Advertising Cost of Sales (ACOS) %", "Total Advertising Cost of Sales (ACOS)"]));
-      row.roas = parseNum(get(["Total Return on Advertising Spend (ROAS)", "ROAS"]));
-      row.ad_cvr = parsePct(get(["7 Day Conversion Rate", "Conversion Rate"]));
-      row.advertised_sku_sales = parseNum(get(["7 Day Advertised SKU Sales", "Advertised SKU Sales"]));
-      row.other_sku_sales = parseNum(get(["7 Day Other SKU Sales", "Other SKU Sales"]));
-    }
+  if (reportType === "business_report") {
+    // Business Report 使用中文列名
+    row.asin = String(get(["（子）ASIN", "子ASIN", "子 ASIN", "Child ASIN", "ASIN"]) ?? "");
+    row.sku = String(get(["SKU"]) ?? "");
+    row.sessions = parseNum(get(["会话数 - 总计", "Sessions - Total", "Sessions"]));
+    row.page_views = parseNum(get(["页面浏览量 - 总计", "Page Views - Total", "Page Views"]));
+    row.br_cvr = parsePct(get(["转化率 - 总计", "Unit Session Percentage - Total", "Unit Session Percentage", "商品会话百分比"]));
+    row.total_units = parseNum(get(["已订购商品数量", "Units Ordered"]));
+    row.total_sales = parseNum(get(["已订购商品销售额", "Ordered Product Sales"]));
+    row.buybox_pct = parsePct(get([
+      "推荐报价（推荐报价展示位）百分比",
+      "推荐报价百分比",
+      "Buy Box Percentage",
+      "Featured Offer (Buy Box) Percentage"
+    ]));
+  } else if (reportType === "campaign_report") {
+    row.campaign_name = String(get(["Campaign Name"]) ?? "");
+    row.portfolio_name = String(get(["Portfolio name", "Portfolio Name"]) ?? "");
+    row.status = String(get(["Status", "Campaign Status"]) ?? "");
+    row.targeting_type = String(get(["Targeting Type"]) ?? "");
+    row.bidding_strategy = String(get(["Bidding strategy"]) ?? "");
+    row.budget = parseNum(get(["Budget Amount", "Budget"]));
+    row.impressions = parseNum(get(["Impressions"]));
+    row.clicks = parseNum(get(["Clicks"]));
+    row.spend = parseNum(get(["Spend"]));
+    row.ad_sales = parseNum(get(["7 Day Total Sales ($)", "7 Day Total Sales"]));
+    row.orders = parseNum(get(["7 Day Total Orders (#)", "7 Day Total Orders"]));
+    row.units = parseNum(get(["7 Day Total Units (#)", "7 Day Total Units"]));
+    row.ctr = parsePct(get(["Click-Thru Rate (CTR)", "CTR"]));
+    row.cpc = parseNum(get(["Cost Per Click (CPC)", "CPC"]));
+    row.acos = parsePct(get(["Total Advertising Cost of Sales (ACOS) %", "Total Advertising Cost of Sales (ACOS)"]));
+    row.roas = parseNum(get(["Total Return on Advertising Spend (ROAS)", "ROAS"]));
+    row.ad_cvr = parsePct(get(["7 Day Conversion Rate", "Conversion Rate"]));
+  } else if (reportType === "targeting_report") {
+    row.campaign_name = String(get(["Campaign Name"]) ?? "");
+    row.ad_group_name = String(get(["Ad Group Name"]) ?? "");
+    row.targeting = String(get(["Targeting"]) ?? "");
+    row.match_type = String(get(["Match Type"]) ?? "");
+    row.impressions = parseNum(get(["Impressions"]));
+    row.clicks = parseNum(get(["Clicks"]));
+    row.spend = parseNum(get(["Spend"]));
+    row.ad_sales = parseNum(get(["7 Day Total Sales ($)", "7 Day Total Sales"]));
+    row.orders = parseNum(get(["7 Day Total Orders (#)", "7 Day Total Orders"]));
+    row.units = parseNum(get(["7 Day Total Units (#)", "7 Day Total Units"]));
+    row.ctr = parsePct(get(["Click-Thru Rate (CTR)", "CTR"]));
+    row.cpc = parseNum(get(["Cost Per Click (CPC)", "CPC"]));
+    row.acos = parsePct(get(["Total Advertising Cost of Sales (ACOS) %", "Total Advertising Cost of Sales (ACOS)"]));
+    row.roas = parseNum(get(["Total Return on Advertising Spend (ROAS)", "ROAS"]));
+    row.ad_cvr = parsePct(get(["7 Day Conversion Rate", "Conversion Rate"]));
+    row.top_of_search_impression_share = parsePct(get(["Top-of-search Impression Share"]));
+  } else if (reportType === "search_term_report") {
+    row.campaign_name = String(get(["Campaign Name"]) ?? "");
+    row.portfolio_name = String(get(["Portfolio name", "Portfolio Name"]) ?? "");
+    row.ad_group_name = String(get(["Ad Group Name"]) ?? "");
+    row.targeting = String(get(["Targeting"]) ?? "");
+    row.match_type = String(get(["Match Type"]) ?? "");
+    row.search_term = String(get(["Customer Search Term"]) ?? "");
+    row.impressions = parseNum(get(["Impressions"]));
+    row.clicks = parseNum(get(["Clicks"]));
+    row.spend = parseNum(get(["Spend"]));
+    row.ad_sales = parseNum(get(["7 Day Total Sales ($)", "7 Day Total Sales"]));
+    row.orders = parseNum(get(["7 Day Total Orders (#)", "7 Day Total Orders"]));
+    row.units = parseNum(get(["7 Day Total Units (#)", "7 Day Total Units"]));
+    row.ctr = parsePct(get(["Click-Thru Rate (CTR)", "CTR"]));
+    row.cpc = parseNum(get(["Cost Per Click (CPC)", "CPC"]));
+    row.acos = parsePct(get(["Total Advertising Cost of Sales (ACOS) %", "Total Advertising Cost of Sales (ACOS)"]));
+    row.roas = parseNum(get(["Total Return on Advertising Spend (ROAS)", "ROAS"]));
+    row.ad_cvr = parsePct(get(["7 Day Conversion Rate", "Conversion Rate"]));
+  } else if (reportType === "advertised_product_report") {
+    row.campaign_name = String(get(["Campaign Name"]) ?? "");
+    row.ad_group_name = String(get(["Ad Group Name"]) ?? "");
+    row.sku = String(get(["Advertised SKU"]) ?? "");
+    row.asin = String(get(["Advertised ASIN"]) ?? "");
+    row.impressions = parseNum(get(["Impressions"]));
+    row.clicks = parseNum(get(["Clicks"]));
+    row.spend = parseNum(get(["Spend"]));
+    row.ad_sales = parseNum(get(["7 Day Total Sales ($)", "7 Day Total Sales"]));
+    row.orders = parseNum(get(["7 Day Total Orders (#)", "7 Day Total Orders"]));
+    row.units = parseNum(get(["7 Day Total Units (#)", "7 Day Total Units"]));
+    row.ctr = parsePct(get(["Click-Thru Rate (CTR)", "CTR"]));
+    row.cpc = parseNum(get(["Cost Per Click (CPC)", "CPC"]));
+    row.acos = parsePct(get(["Total Advertising Cost of Sales (ACOS) %", "Total Advertising Cost of Sales (ACOS)"]));
+    row.roas = parseNum(get(["Total Return on Advertising Spend (ROAS)", "ROAS"]));
+    row.ad_cvr = parsePct(get(["7 Day Conversion Rate", "Conversion Rate"]));
+    row.advertised_sku_sales = parseNum(get(["7 Day Advertised SKU Sales", "Advertised SKU Sales"]));
+    row.other_sku_sales = parseNum(get(["7 Day Other SKU Sales", "Other SKU Sales"]));
   }
 
-  // ============================================================
-  // 计算缺失的衍生指标（通用，不区分格式）
-  // ============================================================
+  // 计算缺失的衍生指标
   if (row.clicks && row.impressions && !row.ctr) {
     row.ctr = row.clicks / row.impressions;
   }
@@ -496,11 +312,8 @@ function normalizeRow(raw: Record<string, unknown>, reportType: ReportType, ling
     row.ad_cvr = row.orders / row.clicks;
   }
 
-  // ============================================================
   // 识别负责人
-  // 领星产品表现报告已在上方直接读取，其他报告从 Campaign 名称解析
-  // ============================================================
-  if (!row.owner_code && row.campaign_name) {
+  if (row.campaign_name) {
     const owner = identifyOwner(row.campaign_name, row.portfolio_name);
     row.owner_code = owner.ownerCode;
     row.owner_name = owner.ownerName;
@@ -517,7 +330,6 @@ export interface ParseResult {
   rows: StandardRow[];
   rowCount: number;
   headers: string[];
-  isLingxing?: boolean;
 }
 
 export async function parseReportBuffer(
@@ -550,15 +362,13 @@ export async function parseReportBuffer(
     }
   }
 
-  const lingxing = isLingxingFormat(headers);
   const reportType = detectReportType(headers);
-  const rows = rawRows.map((raw) => normalizeRow(raw, reportType, lingxing));
+  const rows = rawRows.map((raw) => normalizeRow(raw, reportType));
 
   return {
     reportType,
     rows,
     rowCount: rows.length,
     headers,
-    isLingxing: lingxing,
   };
 }
