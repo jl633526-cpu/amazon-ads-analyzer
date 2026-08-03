@@ -588,6 +588,56 @@ function ActionRow({ item }: { item: SearchTermItem }) {
 }
 
 // ============================================================
+// 辅助：SearchTermAggregate 列表合计行
+// ============================================================
+function AggSummaryBar({ items, label }: { items: SearchTermAggregate[]; label: string }) {
+  if (!items.length) return null;
+  const gt = items.reduce(
+    (acc, a) => ({
+      totalImpressions: acc.totalImpressions + a.totalImpressions,
+      totalClicks: acc.totalClicks + a.totalClicks,
+      totalSpend: acc.totalSpend + a.totalSpend,
+      totalOrders: acc.totalOrders + a.totalOrders,
+      totalSales: acc.totalSales + a.totalSales,
+    }),
+    { totalImpressions: 0, totalClicks: 0, totalSpend: 0, totalOrders: 0, totalSales: 0 }
+  );
+  const gtAcos = gt.totalSales > 0 ? gt.totalSpend / gt.totalSales : null;
+  const gtCvr  = gt.totalClicks > 0 ? gt.totalOrders / gt.totalClicks : null;
+  const gtCtr  = gt.totalImpressions > 0 ? gt.totalClicks / gt.totalImpressions : null;
+  const stats = [
+    { label: "曝光量", value: formatCompact(gt.totalImpressions) },
+    { label: "点击量", value: num(gt.totalClicks) },
+    { label: "CTR",   value: pct(gtCtr) },
+    { label: "总花费", value: usd(gt.totalSpend), accent: true },
+    { label: "总订单", value: String(gt.totalOrders) },
+    { label: "ACOS",  value: pct(gtAcos), acos: gtAcos },
+    { label: "CVR",   value: pct(gtCvr) },
+  ];
+  return (
+    <div className="mt-4 rounded-xl border-2 border-primary/50 bg-gradient-to-r from-primary/15 via-primary/8 to-transparent shadow-md shadow-primary/10 overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-2 bg-primary/15 border-b border-primary/25">
+        <div className="h-2 w-2 rounded-full bg-primary" />
+        <span className="text-xs font-bold text-primary tracking-widest uppercase">数据合计</span>
+        <span className="text-xs text-muted-foreground ml-2">{label} · 共 {items.length} 条</span>
+      </div>
+      <div className="grid grid-cols-4 sm:grid-cols-7 divide-x divide-primary/15">
+        {stats.map(({ label: l, value, accent, acos: acosVal }) => (
+          <div key={l} className="flex flex-col items-center justify-center px-2 py-3 gap-0.5">
+            <div className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">{l}</div>
+            <div className={`text-sm font-bold tabular-nums ${
+              accent ? "text-primary" :
+              acosVal != null ? (acosVal > 0.5 ? "text-red-400" : "text-emerald-400") :
+              "text-foreground"
+            }`}>{value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // 主组件
 // ============================================================
 export default function SearchTermTab({ data, analysis, ownerFilter: _ownerFilter, ownerName }: Props) {
@@ -861,44 +911,59 @@ export default function SearchTermTab({ data, analysis, ownerFilter: _ownerFilte
       )}
 
       {/* ── 高价值词 ── */}
-      {activeTab === "highvalue" && (
-        <div className="space-y-2">
-          {!analysis?.highValueTerms?.length ? <div className="flex flex-col items-center py-16 text-muted-foreground"><Star className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无高价值词</p></div>
-            : filterByOwner(analysis.highValueTerms).map((a, i) => <TermRow key={a.searchTerm} agg={a} rank={i + 1} />)}
-        </div>
-      )}
+      {activeTab === "highvalue" && (() => {
+        const items = filterByOwner(analysis?.highValueTerms ?? []);
+        return (
+          <div className="space-y-2">
+            {!items.length ? <div className="flex flex-col items-center py-16 text-muted-foreground"><Star className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无高价值词</p></div>
+              : <>{items.map((a, i) => <TermRow key={a.searchTerm} agg={a} rank={i + 1} />)}<AggSummaryBar items={items} label="高价值词" /></>}
+          </div>
+        );
+      })()}
 
       {/* ── 亏损词 ── */}
-      {activeTab === "loss" && (
-        <div className="space-y-2">
-          {!analysis?.lossTerms?.length ? <div className="flex flex-col items-center py-16 text-muted-foreground"><TrendingDown className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无亏损词</p></div>
-            : filterByOwner(analysis.lossTerms).map((a, i) => <TermRow key={a.searchTerm} agg={a} rank={i + 1} />)}
-        </div>
-      )}
+      {activeTab === "loss" && (() => {
+        const items = filterByOwner(analysis?.lossTerms ?? []);
+        return (
+          <div className="space-y-2">
+            {!items.length ? <div className="flex flex-col items-center py-16 text-muted-foreground"><TrendingDown className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无亏损词</p></div>
+              : <>{items.map((a, i) => <TermRow key={a.searchTerm} agg={a} rank={i + 1} />)}<AggSummaryBar items={items} label="亏损词" /></>}
+          </div>
+        );
+      })()}
 
       {/* ── 无效词 ── */}
-      {activeTab === "invalid" && (
-        <div className="space-y-2">
-          {!analysis?.invalidTerms?.length ? <div className="flex flex-col items-center py-16 text-muted-foreground"><XCircle className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无无效词</p></div>
-            : filterByOwner(analysis.invalidTerms).map((a, i) => <TermRow key={a.searchTerm} agg={a} rank={i + 1} />)}
-        </div>
-      )}
+      {activeTab === "invalid" && (() => {
+        const items = filterByOwner(analysis?.invalidTerms ?? []);
+        return (
+          <div className="space-y-2">
+            {!items.length ? <div className="flex flex-col items-center py-16 text-muted-foreground"><XCircle className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无无效词</p></div>
+              : <>{items.map((a, i) => <TermRow key={a.searchTerm} agg={a} rank={i + 1} />)}<AggSummaryBar items={items} label="无效词" /></>}
+          </div>
+        );
+      })()}
 
       {/* ── 潜力词 ── */}
-      {activeTab === "potential" && (
-        <div className="space-y-2">
-          {!analysis?.potentialTerms?.length ? <div className="flex flex-col items-center py-16 text-muted-foreground"><Eye className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无潜力词</p></div>
-            : filterByOwner(analysis.potentialTerms).map((a, i) => <TermRow key={a.searchTerm} agg={a} rank={i + 1} />)}
-        </div>
-      )}
+      {activeTab === "potential" && (() => {
+        const items = filterByOwner(analysis?.potentialTerms ?? []);
+        return (
+          <div className="space-y-2">
+            {!items.length ? <div className="flex flex-col items-center py-16 text-muted-foreground"><Eye className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无潜力词</p></div>
+              : <>{items.map((a, i) => <TermRow key={a.searchTerm} agg={a} rank={i + 1} />)}<AggSummaryBar items={items} label="潜力词" /></>}
+          </div>
+        );
+      })()}
 
       {/* ── 花费TOP词 ── */}
-      {activeTab === "topspend" && (
-        <div className="space-y-2">
-          {!analysis?.topTermsBySpend?.length ? <div className="flex flex-col items-center py-16 text-muted-foreground"><DollarSign className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无数据</p></div>
-            : filterByOwner(analysis.topTermsBySpend).map((a, i) => <TermRow key={a.searchTerm} agg={a} rank={i + 1} />)}
-        </div>
-      )}
+      {activeTab === "topspend" && (() => {
+        const items = filterByOwner(analysis?.topTermsBySpend ?? []);
+        return (
+          <div className="space-y-2">
+            {!items.length ? <div className="flex flex-col items-center py-16 text-muted-foreground"><DollarSign className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无数据</p></div>
+              : <>{items.map((a, i) => <TermRow key={a.searchTerm} agg={a} rank={i + 1} />)}<AggSummaryBar items={items} label="花费TOP词" /></>}
+          </div>
+        );
+      })()}
 
       {/* ── 否词建议 ── */}
       {activeTab === "negate" && (
