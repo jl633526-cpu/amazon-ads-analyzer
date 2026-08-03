@@ -802,9 +802,56 @@ export default function SearchTermTab({ data, analysis, ownerFilter: _ownerFilte
           </div>
           {rootFiltered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground"><GitBranch className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无词根数据（需要至少2个同词根的搜索词）</p></div>
-          ) : (
-            <div className="space-y-2">{rootFiltered.map((root, i) => <RootRow key={root.root} root={root} rank={i + 1} />)}</div>
-          )}
+          ) : (() => {
+            const gt = rootFiltered.reduce(
+              (acc, r) => ({
+                termCount: acc.termCount + r.termCount,
+                totalImpressions: acc.totalImpressions + r.totalImpressions,
+                totalClicks: acc.totalClicks + r.totalClicks,
+                totalSpend: acc.totalSpend + r.totalSpend,
+                totalOrders: acc.totalOrders + r.totalOrders,
+                totalSales: acc.totalSales + r.totalSales,
+              }),
+              { termCount: 0, totalImpressions: 0, totalClicks: 0, totalSpend: 0, totalOrders: 0, totalSales: 0 }
+            );
+            const gtAcos = gt.totalSales > 0 ? gt.totalSpend / gt.totalSales : null;
+            const gtCvr  = gt.totalClicks > 0 ? gt.totalOrders / gt.totalClicks : null;
+            const gtCtr  = gt.totalImpressions > 0 ? gt.totalClicks / gt.totalImpressions : null;
+            const stats = [
+              { label: "曝光量",  value: formatCompact(gt.totalImpressions) },
+              { label: "点击量",  value: num(gt.totalClicks) },
+              { label: "CTR",    value: pct(gtCtr) },
+              { label: "总花费",  value: usd(gt.totalSpend),   accent: true },
+              { label: "总订单",  value: String(gt.totalOrders) },
+              { label: "ACOS",   value: pct(gtAcos),           acos: gtAcos },
+              { label: "CVR",    value: pct(gtCvr) },
+            ];
+            return (
+              <div className="space-y-2">
+                {rootFiltered.map((root, i) => <RootRow key={root.root} root={root} rank={i + 1} />)}
+                {/* ── 数据合计行 ── */}
+                <div className="mt-4 rounded-xl border-2 border-primary/50 bg-gradient-to-r from-primary/15 via-primary/8 to-transparent shadow-md shadow-primary/10 overflow-hidden">
+                  <div className="flex items-center gap-2 px-4 py-2 bg-primary/15 border-b border-primary/25">
+                    <div className="h-2 w-2 rounded-full bg-primary" />
+                    <span className="text-xs font-bold text-primary tracking-widest uppercase">数据合计</span>
+                    <span className="text-xs text-muted-foreground ml-2">共 {rootFiltered.length} 个词根 · {gt.termCount} 个搜索词</span>
+                  </div>
+                  <div className="grid grid-cols-4 sm:grid-cols-7 divide-x divide-primary/15">
+                    {stats.map(({ label, value, accent, acos: acosVal }) => (
+                      <div key={label} className="flex flex-col items-center justify-center px-2 py-3 gap-0.5">
+                        <div className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">{label}</div>
+                        <div className={`text-sm font-bold tabular-nums ${
+                          accent ? "text-primary" :
+                          acosVal != null ? (acosVal > 0.5 ? "text-red-400" : "text-emerald-400") :
+                          "text-foreground"
+                        }`}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
