@@ -615,15 +615,16 @@ function AggSummaryBar({ items, label }: { items: SearchTermAggregate[]; label: 
     { label: "CVR",   value: pct(gtCvr) },
   ];
   return (
-    <div className="mt-4 rounded-xl border-2 border-primary/50 bg-gradient-to-r from-primary/15 via-primary/8 to-transparent shadow-md shadow-primary/10 overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-2 bg-primary/15 border-b border-primary/25">
+    <div className="fixed bottom-0 left-0 right-0 z-30 border-t-2 border-primary/50 bg-background/95 backdrop-blur-md shadow-[0_-4px_24px_rgba(0,0,0,0.3)] overflow-hidden">
+      <div className="container">
+      <div className="flex items-center gap-2 px-4 py-1.5 bg-primary/10 border-b border-primary/20">
         <div className="h-2 w-2 rounded-full bg-primary" />
         <span className="text-xs font-bold text-primary tracking-widest uppercase">数据合计</span>
         <span className="text-xs text-muted-foreground ml-2">{label} · 共 {items.length} 条</span>
       </div>
-      <div className="grid grid-cols-4 sm:grid-cols-7 divide-x divide-primary/15">
+      <div className="grid grid-cols-4 sm:grid-cols-7 divide-x divide-primary/15 container">
         {stats.map(({ label: l, value, accent, acos: acosVal }) => (
-          <div key={l} className="flex flex-col items-center justify-center px-2 py-3 gap-0.5">
+          <div key={l} className="flex flex-col items-center justify-center px-2 py-2 gap-0.5">
             <div className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">{l}</div>
             <div className={`text-sm font-bold tabular-nums ${
               accent ? "text-primary" :
@@ -632,6 +633,7 @@ function AggSummaryBar({ items, label }: { items: SearchTermAggregate[]; label: 
             }`}>{value}</div>
           </div>
         ))}
+      </div>
       </div>
     </div>
   );
@@ -701,7 +703,7 @@ export default function SearchTermTab({ data, analysis, ownerFilter: _ownerFilte
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-24">
       {/* 二级 Tab 导航 */}
       <div className="flex gap-0.5 overflow-x-auto pb-1 scrollbar-hide border-b border-border/30">
         {TABS.map((tab) => (
