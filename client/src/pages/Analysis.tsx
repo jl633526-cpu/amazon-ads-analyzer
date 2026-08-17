@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
+import { downloadAnalysisWorkbook } from "@/lib/analysisExcelExport";
 import { useLocation, useParams } from "wouter";
 import { getLoginUrl } from "@/const";
 import { toast } from "sonner";
@@ -262,6 +263,17 @@ export default function Analysis() {
     toast.success("CSV已下载");
   };
 
+  const handleExportExcel = () => {
+    if (!result) return;
+    const filename = downloadAnalysisWorkbook({
+      result: result as never,
+      taskName: taskData?.task?.name ?? `分析_${taskId}`,
+      ownerCode: selectedOwner,
+      ownerName: selectedOwnerName,
+    });
+    toast.success(`Excel已导出：${filename}`);
+  };
+
   return (
     <div className="min-h-screen bg-background font-['Inter',sans-serif]">
       {/* 顶部导航 */}
@@ -301,7 +313,13 @@ export default function Analysis() {
               刷新
             </Button>
             {isCompleted && (
-              <Button size="sm" onClick={handleDownloadCSV}>
+              <Button size="sm" onClick={handleExportExcel}>
+                <Download className="h-4 w-4 mr-1" />
+                导出Excel
+              </Button>
+            )}
+            {isCompleted && (
+              <Button variant="outline" size="sm" onClick={handleDownloadCSV}>
                 <Download className="h-4 w-4 mr-1" />
                 下载清单
               </Button>
