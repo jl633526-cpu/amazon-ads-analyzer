@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { identifyOwner, OWNER_RULES } from "./reportParser";
-import { calcProductPerformanceAnalysis, runFullAnalysis } from "./analysisEngine";
+import { runFullAnalysis } from "./analysisEngine";
 import type { StandardRow } from "./reportParser";
 
 // ============================================================
@@ -218,48 +218,5 @@ describe("ACOS阈值判断", () => {
       brRows: [],
     });
     expect(result.accountOverview.acosStatus).toBe("优秀");
-  });
-});
-
-// ============================================================
-// 产品表现分析测试
-// ============================================================
-describe("产品表现分析", () => {
-  it("应按ASIN关联产品表现与推广商品数据，并计算TACOS和产品CVR", () => {
-    const result = calcProductPerformanceAnalysis(
-      [{ asin: "B0PRODUCT01", sku: "SKU-BUSINESS", sessions: 1000, page_views: 1200, total_units: 180, total_sales: 3000, owner_code: "CL", owner_name: "陈黎", report_type: "business_report" }],
-      [{ asin: "B0PRODUCT01", sku: "SKU-AD", spend: 300, ad_sales: 1200, orders: 80, owner_code: "CL", owner_name: "陈黎", report_type: "advertised_product_report" }],
-    );
-
-    expect(result.totalProducts).toBe(1);
-    expect(result.products[0]).toMatchObject({ asin: "B0PRODUCT01", sessions: 1000, units: 180, totalSales: 3000, adSpend: 300, adSales: 1200 });
-    expect(result.products[0]?.brCvr).toBeCloseTo(0.18, 5);
-    expect(result.products[0]?.tacos).toBeCloseTo(0.1, 5);
-    expect(result.products[0]?.acos).toBeCloseTo(0.25, 5);
-    expect(result.products[0]?.label).toBe("high_potential");
-  });
-
-  it("应标记高广告成本产品为广告低效", () => {
-    const result = calcProductPerformanceAnalysis(
-      [{ asin: "B0PRODUCT02", sessions: 500, total_units: 50, total_sales: 1000, owner_code: "CST", owner_name: "陈诗婷", report_type: "business_report" }],
-      [{ asin: "B0PRODUCT02", spend: 900, ad_sales: 700, orders: 12, owner_code: "CST", owner_name: "陈诗婷", report_type: "advertised_product_report" }],
-    );
-
-    expect(result.products[0]?.label).toBe("ad_inefficient");
-    expect(result.labelDistribution.ad_inefficient).toBe(1);
-  });
-
-  it("应在完整分析流程中返回产品表现分析结果", () => {
-    const result = runFullAnalysis({
-      campaignRows: [],
-      targetingRows: [],
-      searchTermRows: [],
-      advertisedProductRows: [{ asin: "B0PRODUCT03", spend: 80, ad_sales: 400, orders: 20, owner_code: "HST", owner_name: "黄舒婷", report_type: "advertised_product_report" }],
-      brRows: [{ asin: "B0PRODUCT03", sessions: 300, total_units: 60, total_sales: 800, owner_code: "HST", owner_name: "黄舒婷", report_type: "business_report" }],
-    });
-
-    expect(result.productPerformanceAnalysis.totalProducts).toBe(1);
-    expect(result.productPerformanceAnalysis.products[0]?.ownerCode).toBe("HST");
-    expect(result.productPerformanceAnalysis.products[0]?.tacos).toBeCloseTo(0.1, 5);
   });
 });

@@ -17,7 +17,6 @@ import {
   Target,
   Search,
   ListChecks,
-  PackageSearch,
   AlertTriangle,
   ChevronDown,
   UserCircle,
@@ -28,7 +27,6 @@ import OwnerAnalysisTab from "@/components/analysis/OwnerAnalysisTab";
 import CampaignSuggestionsTab from "@/components/analysis/CampaignSuggestionsTab";
 import TargetingSuggestionsTab from "@/components/analysis/TargetingSuggestionsTab";
 import SearchTermTab from "@/components/analysis/SearchTermTab";
-import ProductPerformanceTab from "@/components/analysis/ProductPerformanceTab";
 import ActionItemsTab from "@/components/analysis/ActionItemsTab";
 
 const TABS = [
@@ -36,7 +34,6 @@ const TABS = [
   { id: "owners", label: "负责人分析", icon: Users },
   { id: "campaigns", label: "Campaign建议", icon: Target },
   { id: "targeting", label: "Targeting建议", icon: Search },
-  { id: "products", label: "产品表现", icon: PackageSearch },
   { id: "searchterms", label: "Search Term清单", icon: Search },
   { id: "actions", label: "运营动作清单", icon: ListChecks },
 ];
@@ -457,12 +454,6 @@ export default function Analysis() {
                 data={result.targetingSuggestions as never}
                 ownerFilter={selectedOwner}
                 ownerName={selectedOwnerName}
-              />
-            )}
-            {activeTab === "products" && (
-              <ProductPerformanceTab
-                data={result.productPerformanceAnalysis as never}
-                ownerFilter={selectedOwner}
               />
             )}
             {activeTab === "searchterms" && (

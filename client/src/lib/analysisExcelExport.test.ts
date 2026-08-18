@@ -18,9 +18,6 @@ const result = {
     { priority: "P1", campaignName: "MT-CL-Campaign", ownerCode: "CL", ownerName: "陈黎", spend: 100, adSales: 500, orders: 12, clicks: 60, acos: 0.2, ctr: 0.012, cvr: 0.2, cpc: 1.67, issues: ["测试问题"], actions: ["测试动作"], acosStatus: "优秀" },
   ],
   targetingSuggestions: [],
-  productPerformanceAnalysis: {
-    products: [{ asin: "B0PRODUCT01", sku: "SKU-CL-01", ownerCode: "CL", ownerName: "陈黎", sessions: 1000, pageViews: 1200, units: 200, totalSales: 3000, brCvr: 0.2, buyboxPct: 0.95, adSpend: 300, adSales: 1200, adOrders: 80, acos: 0.25, tacos: 0.1, adSalesShare: 0.4, label: "high_potential", labelReason: "测试", recommendation: "扩大流量" }],
-  },
   searchTermLists: {
     negateList: [{ searchTerm: "test term", targeting: "test", matchType: "BROAD", campaignName: "MT-CL-Campaign", adGroupName: "Group", ownerCode: "CL", ownerName: "陈黎", clicks: 25, spend: 10, orders: 0, acos: null, reason: "测试原因", action: "否定短语" }],
     toExactList: [], amplifyList: [],
@@ -37,7 +34,7 @@ describe("分析结果Excel导出", () => {
     const workbook = buildAnalysisWorkbook({ result, taskName: "测试任务" });
     expect(workbook.SheetNames).toEqual(expect.arrayContaining([
       "导出说明", "账户总览", "负责人分析", "Campaign建议", "Targeting建议",
-      "产品表现", "高价值词", "词根分析", "匹配类型", "否词建议", "运营动作",
+      "高价值词", "词根分析", "匹配类型", "否词建议", "运营动作",
     ]));
     const overview = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets["账户总览"]);
     expect(overview).toEqual(expect.arrayContaining([expect.objectContaining({ "指标": "总花费", "数值": 300 })]));
@@ -47,13 +44,10 @@ describe("分析结果Excel导出", () => {
     const workbook = buildAnalysisWorkbook({ result, taskName: "测试任务", ownerCode: "CL", ownerName: "陈黎" });
     const owners = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets["负责人分析"]);
     const campaigns = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets["Campaign建议"]);
-    const products = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets["产品表现"]);
     const searchTerms = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets["高价值词"]);
     expect(owners).toHaveLength(1);
     expect(owners[0]?.["负责人"]).toBe("陈黎");
     expect(campaigns).toHaveLength(1);
-    expect(products).toHaveLength(1);
-    expect(products[0]?.["负责人"]).toBe("陈黎");
     expect(searchTerms).toHaveLength(1);
     expect(workbook.SheetNames).toContain("词根分析（全量）");
   });

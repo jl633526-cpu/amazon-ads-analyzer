@@ -7,9 +7,6 @@ export interface AnalysisExportResult {
   ownerAnalysis?: DataRow[];
   campaignSuggestions?: DataRow[];
   targetingSuggestions?: DataRow[];
-  productPerformanceAnalysis?: {
-    products?: DataRow[];
-  };
   searchTermLists?: {
     negateList?: DataRow[];
     toExactList?: DataRow[];
@@ -160,17 +157,6 @@ function makeTargetingRows(rows: DataRow[]) {
   }));
 }
 
-function makeProductRows(rows: DataRow[]) {
-  return rows.map((row) => ({
-    "ASIN": row.asin ?? "", "MSKU": row.sku ?? "", "负责人": row.ownerName ?? "", "负责人编码": row.ownerCode ?? "",
-    "会话": numeric(row.sessions), "页面浏览量": numeric(row.pageViews), "销量": numeric(row.units),
-    "总销售额": numeric(row.totalSales), "产品CVR": numeric(row.brCvr), "Buy Box占比": numeric(row.buyboxPct),
-    "广告花费": numeric(row.adSpend), "广告销售额": numeric(row.adSales), "广告订单": numeric(row.adOrders),
-    "ACOS": numeric(row.acos), "TACOS": numeric(row.tacos), "广告销售占比": numeric(row.adSalesShare),
-    "产品标签": row.label ?? "", "判断依据": row.labelReason ?? "", "运营建议": row.recommendation ?? "",
-  }));
-}
-
 function makeSearchAggregateRows(rows: DataRow[]) {
   return rows.map((row) => ({
     "搜索词": row.searchTerm ?? "", "词性": row.wordCategory ?? "", "标签": row.label ?? "",
@@ -275,7 +261,6 @@ export function buildAnalysisWorkbook(options: AnalysisExcelExportOptions): XLSX
     ? makeOwnerOverviewRows(selectedOwner, ownerName)
     : makeOverviewRows(result.accountOverview));
   appendSheet(workbook, "负责人分析", makeOwnerRows(filterByOwner(result.ownerAnalysis, ownerCode, ownerName)));
-  appendSheet(workbook, "产品表现", makeProductRows(filterByOwner(result.productPerformanceAnalysis?.products, ownerCode, ownerName)));
   appendSheet(workbook, "Campaign建议", makeCampaignRows(filterByOwner(result.campaignSuggestions, ownerCode, ownerName)));
   appendSheet(workbook, "Targeting建议", makeTargetingRows(filterByOwner(result.targetingSuggestions, ownerCode, ownerName)));
   appendSheet(workbook, "高价值词", makeSearchAggregateRows(filterByOwner(analysis.highValueTerms, ownerCode, ownerName)));
