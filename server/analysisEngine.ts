@@ -428,6 +428,182 @@ export function calcTargetingSuggestions(targetingRows: StandardRow[]): Targetin
 }
 
 // ============================================================
+// 产品表现分析（产品表现报告 + 推广商品报告）
+// ============================================================
+export type ProductPerformanceLabel = "high_potential" | "ad_inefficient" | "conversion_risk" | "traffic_risk" | "healthy";
+
+export interface ProductPerformanceItem {
+  asin: string;
+  sku: string;
+  ownerCode: string;
+  ownerName: string;
+  sessions: number;
+  pageViews: number;
+  units: number;
+  totalSales: number;
+  brCvr: number | null;
+  buyboxPct: number | null;
+  adSpend: number;
+  adSales: number;
+  adOrders: number;
+  acos: number | null;
+  tacos: number | null;
+  adSalesShare: number | null;
+  label: ProductPerformanceLabel;
+  labelReason: string;
+  recommendation: string;
+}
+
+export interface ProductPerformanceAnalysis {
+  totalProducts: number;
+  totalSessions: number;
+  totalUnits: number;
+  totalSales: number;
+  totalAdSpend: number;
+  totalAdSales: number;
+  tacos: number | null;
+  overallCvr: number | null;
+  labelDistribution: Record<ProductPerformanceLabel, number>;
+  products: ProductPerformanceItem[];
+}
+
+function productKey(row: StandardRow): string {
+  const asin = row.asin?.trim() ?? "";
+  const sku = row.sku?.trim() ?? "";
+  return asin ? `asin:${asin}` : sku ? `sku:${sku}` : "";
+}
+
+function emptyProductLabelDistribution(): Record<ProductPerformanceLabel, number> {
+  return { high_potential: 0, ad_inefficient: 0, conversion_risk: 0, traffic_risk: 0, healthy: 0 };
+}
+
+function diagnoseProduct(item: Omit<ProductPerformanceItem, "label" | "labelReason" | "recommendation">): Pick<ProductPerformanceItem, "label" | "labelReason" | "recommendation"> {
+  if (item.totalSales <= 0) {
+    return {
+      label: "healthy",
+      labelReason: "未获取到产品销售额，暂不评估TACOS与产品经营效率",
+      recommendation: "请确认产品表现报告包含销售额字段，以补全TACOS和产品经营诊断。",
+    };
+  }
+  if (item.adSpend >= 20 && ((item.acos !== null && item.acos >= THRESHOLDS.acos.warning) || (item.tacos !== null && item.tacos >= 0.35))) {
+    return {
+      label: "ad_inefficient",
+      labelReason: `广告花费${item.adSpend.toFixed(2)}，${item.acos !== null ? `ACOS ${(item.acos * 100).toFixed(1)}%` : `TACOS ${((item.tacos ?? 0) * 100).toFixed(1)}%`}偏高`,
+      recommendation: "降低低效投放出价，优先清理高花费无转化词，并复核Listing承接。",
+    };
+  }
+  if (item.sessions >= 100 && item.brCvr !== null && item.brCvr < THRESHOLDS.cvr.warning) {
+    return {
+      label: "conversion_risk",
+      labelReason: `会话${item.sessions}，产品转化率${(item.brCvr * 100).toFixed(1)}%低于预警线`,
+      recommendation: "优先优化主图、价格、优惠、评价和详情页，暂缓扩大广告流量。",
+    };
+  }
+  if (item.sessions < 50 && item.totalSales > 0) {
+    return {
+      label: "traffic_risk",
+      labelReason: `会话量仅${item.sessions}，流量基础偏弱`,
+      recommendation: "补充核心词和竞品投放，提升预算并检查自然搜索曝光。",
+    };
+  }
+  if (item.sessions >= 100 && item.brCvr !== null && item.brCvr >= THRESHOLDS.cvr.pass && (item.tacos === null || item.tacos < 0.22)) {
+    return {
+      label: "high_potential",
+      labelReason: `会话${item.sessions}，转化率${(item.brCvr * 100).toFixed(1)}%，广告成本可控`,
+      recommendation: "可逐步提高高转化词出价与预算，扩大有效流量并观察TACOS。",
+    };
+  }
+  return {
+    label: "healthy",
+    labelReason: "流量、转化与广告投入处于可观察范围",
+    recommendation: "维持现有节奏，持续监控转化率、ACOS和库存状态。",
+  };
+}
+
+export function calcProductPerformanceAnalysis(
+  businessRows: StandardRow[],
+  advertisedProductRows: StandardRow[],
+): ProductPerformanceAnalysis {
+  const businessMap = new Map<string, StandardRow[]>();
+  const adMap = new Map<string, StandardRow[]>();
+  for (const row of businessRows) {
+    const key = productKey(row);
+    if (!key) continue;
+    if (!businessMap.has(key)) businessMap.set(key, []);
+    businessMap.get(key)!.push(row);
+  }
+  for (const row of advertisedProductRows) {
+    const key = productKey(row);
+    if (!key) continue;
+    if (!adMap.has(key)) adMap.set(key, []);
+    adMap.get(key)!.push(row);
+  }
+
+  const keys = new Set([...Array.from(businessMap.keys()), ...Array.from(adMap.keys())]);
+  const products: ProductPerformanceItem[] = [];
+  for (const key of Array.from(keys)) {
+    const business = businessMap.get(key) ?? [];
+    const ads = adMap.get(key) ?? [];
+    const source = business[0] ?? ads[0];
+    if (!source) continue;
+
+    const sessions = sum(business, "sessions");
+    const pageViews = sum(business, "page_views");
+    const units = sum(business, "total_units");
+    const totalSales = sum(business, "total_sales");
+    const adSpend = sum(ads, "spend");
+    const adSales = sum(ads, "ad_sales");
+    const adOrders = sum(ads, "orders");
+    const brCvr = sessions > 0 ? units / sessions : business[0]?.br_cvr ?? null;
+    const buyboxPct = business[0]?.buybox_pct ?? null;
+    const acos = adSales > 0 ? adSpend / adSales : null;
+    const tacos = totalSales > 0 ? adSpend / totalSales : null;
+    const adSalesShare = totalSales > 0 ? adSales / totalSales : null;
+    const base = {
+      asin: source.asin ?? "",
+      sku: source.sku ?? "",
+      ownerCode: business[0]?.owner_code ?? ads[0]?.owner_code ?? "UNKNOWN",
+      ownerName: business[0]?.owner_name ?? ads[0]?.owner_name ?? "未识别",
+      sessions,
+      pageViews,
+      units,
+      totalSales,
+      brCvr,
+      buyboxPct,
+      adSpend,
+      adSales,
+      adOrders,
+      acos,
+      tacos,
+      adSalesShare,
+    };
+    products.push({ ...base, ...diagnoseProduct(base) });
+  }
+
+  products.sort((a, b) => b.totalSales - a.totalSales || b.adSpend - a.adSpend);
+  const totalSessions = products.reduce((sum, product) => sum + product.sessions, 0);
+  const totalUnits = products.reduce((sum, product) => sum + product.units, 0);
+  const totalSales = products.reduce((sum, product) => sum + product.totalSales, 0);
+  const totalAdSpend = products.reduce((sum, product) => sum + product.adSpend, 0);
+  const totalAdSales = products.reduce((sum, product) => sum + product.adSales, 0);
+  const labelDistribution = emptyProductLabelDistribution();
+  products.forEach((product) => { labelDistribution[product.label] += 1; });
+
+  return {
+    totalProducts: products.length,
+    totalSessions,
+    totalUnits,
+    totalSales,
+    totalAdSpend,
+    totalAdSales,
+    tacos: totalSales > 0 ? totalAdSpend / totalSales : null,
+    overallCvr: totalSessions > 0 ? totalUnits / totalSessions : null,
+    labelDistribution,
+    products,
+  };
+}
+
+// ============================================================
 // Search Term 核心分析（以搜索词为主）
 // ============================================================
 
@@ -1148,6 +1324,7 @@ export interface FullAnalysisResult {
   targetingSuggestions: TargetingSuggestion[];
   searchTermLists: SearchTermLists;
   searchTermAnalysis: SearchTermAnalysis;  // 新增：搜索词深度分析
+  productPerformanceAnalysis: ProductPerformanceAnalysis;
   actionItems: ActionItem[];
 }
 
@@ -1158,7 +1335,7 @@ export function runFullAnalysis(allRows: {
   advertisedProductRows: StandardRow[];
   brRows: StandardRow[];
 }): FullAnalysisResult {
-  const { campaignRows, targetingRows, searchTermRows, brRows } = allRows;
+  const { campaignRows, targetingRows, searchTermRows, advertisedProductRows, brRows } = allRows;
 
   const accountOverview = calcAccountOverview(campaignRows, brRows);
   const ownerAnalysis = calcOwnerAnalysis(campaignRows);
@@ -1166,6 +1343,7 @@ export function runFullAnalysis(allRows: {
   const targetingSuggestions = calcTargetingSuggestions(targetingRows);
   const searchTermLists = calcSearchTermLists(searchTermRows);
   const searchTermAnalysis = calcSearchTermAnalysis(searchTermRows); // 新增
+  const productPerformanceAnalysis = calcProductPerformanceAnalysis(brRows, advertisedProductRows);
   const actionItems = buildActionItems(campaignSuggestions, targetingSuggestions, searchTermLists);
 
   return {
@@ -1175,6 +1353,7 @@ export function runFullAnalysis(allRows: {
     targetingSuggestions,
     searchTermLists,
     searchTermAnalysis,
+    productPerformanceAnalysis,
     actionItems,
   };
 }

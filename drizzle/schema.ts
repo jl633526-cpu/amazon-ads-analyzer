@@ -80,6 +80,8 @@ export const analysisResults = mysqlTable("analysis_results", {
   searchTermLists: json("searchTermLists"),
   // Search Term深度分析（以搜索词为核心）
   searchTermAnalysis: json("searchTermAnalysis"),
+  // 产品表现分析（产品表现报告 + 推广商品报告）
+  productPerformanceAnalysis: json("productPerformanceAnalysis"),
   // 运营动作清单
   actionItems: json("actionItems"),
   // 原始指标数据
