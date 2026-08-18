@@ -90,3 +90,39 @@ export const analysisResults = mysqlTable("analysis_results", {
 });
 
 export type AnalysisResult = typeof analysisResults.$inferSelect;
+
+// 独立产品表现分析任务，不与广告分析任务混用
+export const productAnalysisTasks = mysqlTable("product_analysis_tasks", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  status: mysqlEnum("status", ["pending", "processing", "completed", "failed"]).default("pending").notNull(),
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const productAnalysisFiles = mysqlTable("product_analysis_files", {
+  id: int("id").autoincrement().primaryKey(),
+  taskId: int("taskId").notNull(),
+  periodRole: mysqlEnum("periodRole", ["current", "prior"]).notNull(),
+  originalName: varchar("originalName", { length: 255 }).notNull(),
+  fileKey: varchar("fileKey", { length: 512 }).notNull(),
+  fileUrl: varchar("fileUrl", { length: 512 }).notNull(),
+  rowCount: int("rowCount").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const productAnalysisResults = mysqlTable("product_analysis_results", {
+  id: int("id").autoincrement().primaryKey(),
+  taskId: int("taskId").notNull().unique(),
+  summary: json("summary"),
+  ownerSummaries: json("ownerSummaries"),
+  products: json("products"),
+  stars: json("stars"),
+  losses: json("losses"),
+  attentions: json("attentions"),
+  currentPeriod: varchar("currentPeriod", { length: 16 }),
+  priorPeriod: varchar("priorPeriod", { length: 16 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});

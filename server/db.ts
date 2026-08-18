@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, analysisTasks, reportFiles, analysisResults } from "../drizzle/schema";
+import { InsertUser, users, analysisTasks, reportFiles, analysisResults, productAnalysisTasks, productAnalysisFiles, productAnalysisResults } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -175,5 +175,92 @@ export async function getTaskByShareToken(shareToken: string) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(analysisTasks).where(eq(analysisTasks.shareToken, shareToken)).limit(1);
+  return result[0];
+}
+
+// ============================================================
+// 独立产品表现分析任务
+// ============================================================
+export async function createProductAnalysisTask(userId: number, name: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(productAnalysisTasks).values({ userId, name, status: "pending" });
+  return result[0].insertId as number;
+}
+
+export async function updateProductAnalysisTaskStatus(
+  taskId: number,
+  status: "pending" | "processing" | "completed" | "failed",
+  errorMessage?: string,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(productAnalysisTasks).set({ status, errorMessage: errorMessage ?? null }).where(eq(productAnalysisTasks.id, taskId));
+}
+
+export async function getProductAnalysisTaskById(taskId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(productAnalysisTasks).where(eq(productAnalysisTasks.id, taskId)).limit(1);
+  return result[0];
+}
+
+export async function getProductAnalysisTasksByUserId(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(productAnalysisTasks).where(eq(productAnalysisTasks.userId, userId));
+}
+
+export async function createProductAnalysisFile(data: {
+  taskId: number;
+  periodRole: "current" | "prior";
+  originalName: string;
+  fileKey: string;
+  fileUrl: string;
+  rowCount: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(productAnalysisFiles).values(data);
+}
+
+export async function getProductAnalysisFilesByTaskId(taskId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(productAnalysisFiles).where(eq(productAnalysisFiles.taskId, taskId));
+}
+
+export async function saveProductAnalysisResult(taskId: number, result: Record<string, unknown>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const values = {
+    taskId,
+    summary: result.summary as never,
+    ownerSummaries: result.ownerSummaries as never,
+    products: result.products as never,
+    stars: result.stars as never,
+    losses: result.losses as never,
+    attentions: result.attentions as never,
+    currentPeriod: result.currentPeriod as string | null,
+    priorPeriod: result.priorPeriod as string | null,
+  };
+  await db.insert(productAnalysisResults).values(values).onDuplicateKeyUpdate({
+    set: {
+      summary: values.summary,
+      ownerSummaries: values.ownerSummaries,
+      products: values.products,
+      stars: values.stars,
+      losses: values.losses,
+      attentions: values.attentions,
+      currentPeriod: values.currentPeriod,
+      priorPeriod: values.priorPeriod,
+    },
+  });
+}
+
+export async function getProductAnalysisResultByTaskId(taskId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(productAnalysisResults).where(eq(productAnalysisResults.taskId, taskId)).limit(1);
   return result[0];
 }
