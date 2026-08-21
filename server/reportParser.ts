@@ -197,7 +197,9 @@ function parseNum(val: unknown): number | undefined {
   if (val === null || val === undefined || val === "") return undefined;
   const original = String(val).trim();
   if (!original || original === "--" || original === "-" || original.includes("无销售额")) return undefined;
-  const str = original.replace(/[$,\s%]/g, "");
+  // 兼容 Amazon Business Report 的 US$52,168.35、$52,168.35 等货币格式。
+  // 保留数字、小数点与正负号，移除所有货币文字、符号、千分位和空白。
+  const str = original.replace(/[^0-9.+-]/g, "");
   const n = parseFloat(str);
   return isNaN(n) ? undefined : n;
 }

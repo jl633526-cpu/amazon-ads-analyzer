@@ -39,6 +39,22 @@ describe("领星ERP报表解析", () => {
     });
   });
 
+  it("应解析Business Report中带US$前缀与千分位的总销售额", async () => {
+    const csv = [
+      "（子）ASIN,SKU,会话数 - 总计,已订购商品数量,已订购商品销售额",
+      "B0BUSINESS01,SKU-BUSINESS,1200,80,\"US$52,168.35\"",
+    ].join("\n");
+    const result = await parseReportBuffer(Buffer.from(csv), "BusinessReport.csv");
+
+    expect(result.reportType).toBe("business_report");
+    expect(result.rows[0]).toMatchObject({
+      asin: "B0BUSINESS01",
+      sessions: 1200,
+      total_units: 80,
+      total_sales: 52168.35,
+    });
+  });
+
   it("应识别广告活动报告并映射核心广告绩效", async () => {
     const result = await parseReportBuffer(buildWorkbookBuffer({
       "广告组合": "MT-CL-01",

@@ -43,6 +43,45 @@ export const appRouter = router({
       return tasks.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     }),
 
+    // 周度总看板：仅返回同时具备业务报告与Campaign报告的已完成任务。
+    weeklyOverview: protectedProcedure.query(async ({ ctx }) => {
+      const tasks = (await getTasksByUserId(ctx.user.id))
+        .filter((task) => task.status === "completed")
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+      const entries = await Promise.all(tasks.map(async (task) => {
+        const [files, result] = await Promise.all([
+          getReportFilesByTaskId(task.id),
+          getAnalysisResultByTaskId(task.id),
+        ]);
+        const types = new Set(files.map((file) => file.reportType));
+        const businessFile = files.find((file) => file.reportType === "business_report");
+        const overview = result?.accountOverview as { totalSales?: number } | null;
+        const periodMatch = businessFile?.originalName.match(/BusinessReport-(\d{1,2})-(\d{1,2})-(\d{2})/i);
+        const taskDateMatch = task.name.match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
+        // 仅纳入文件名能够确认报告周期的周报，避免历史产品表现样本混入周度趋势。
+        if (!types.has("business_report") || !types.has("campaign_report") || !overview || !(overview.totalSales ?? 0) || !periodMatch) return null;
+        const [, month, day, year] = periodMatch;
+        const periodLabel = taskDateMatch
+          ? `${taskDateMatch[1]}/${Number(taskDateMatch[2])}/${Number(taskDateMatch[3])}`
+          : `20${year}/${Number(month)}/${Number(day)}`;
+        return {
+          taskId: task.id,
+          name: task.name,
+          createdAt: task.createdAt,
+          periodLabel,
+          accountOverview: result!.accountOverview,
+        };
+      }));
+
+      // 同名任务只保留最近创建的一份，避免重复分析污染周度趋势。
+      const latestByPeriod = new Map<string, NonNullable<(typeof entries)[number]>>();
+      for (const entry of entries.filter((item): item is NonNullable<typeof item> => item !== null)) {
+        latestByPeriod.set(entry.periodLabel, entry);
+      }
+      return Array.from(latestByPeriod.values()).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    }),
+
     // 获取单个任务详情
     getTask: protectedProcedure
       .input(z.object({ taskId: z.number() }))

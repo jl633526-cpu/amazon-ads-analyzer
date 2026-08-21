@@ -14,6 +14,7 @@ import {
   FileText,
   ChevronRight,
   Share2,
+  BarChart3,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -72,7 +73,11 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground">{user?.name}</span>
-            <Button size="sm" onClick={() => navigate("/upload")}>
+            <Button variant="outline" size="sm" onClick={() => navigate("/weekly-overview")}>
+              <BarChart3 className="h-4 w-4 mr-1" />
+              周度对比
+            </Button>
+            <Button size="sm" onClick={() => navigate("/upload")}> 
               <Plus className="h-4 w-4 mr-1" />
               新建分析
             </Button>

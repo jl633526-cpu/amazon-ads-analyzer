@@ -218,12 +218,12 @@ function buildMetricCards(d: AccountOverview | OwnerMetrics, isOwner: boolean) {
       sub: "曝光总量",
     },
     {
-      label: "Session",
-      value: formatNumber(a.totalSessions),
+      label: "总销售额",
+      value: formatCurrency(a.totalSales),
       icon: Activity,
       color: "text-pink-400",
       bg: "bg-pink-400/10",
-      sub: a.tacos !== null ? `TACOS: ${formatPercent(a.tacos)}` : "需Business Report",
+      sub: a.tacos !== null ? `TACOS: ${formatPercent(a.tacos)} · ${formatNumber(a.totalSessions)} Sessions` : "需Business Report",
     },
     {
       label: "负责人数",
