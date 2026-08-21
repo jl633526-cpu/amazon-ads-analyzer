@@ -811,13 +811,14 @@ export function calcSearchTermAnalysis(searchTermRows: StandardRow[]): SearchTer
 
   // 匹配类型中文标准化
   const normalizeMatchType = (raw: string | null | undefined): string => {
-    const v = (raw ?? "").toUpperCase().trim();
+    const source = (raw ?? "").trim();
+    const v = source.toUpperCase();
     if (v === "BROAD") return "广泛匹配";
     if (v === "EXACT") return "精确匹配";
     if (v === "PHRASE") return "短语匹配";
-    if (v.startsWith("TARGETING_EXPRESSION") || v === "ASIN") return "ASIN匹配";
-    if (v === "AUTO") return "自动匹配";
-    return raw ?? "未知";
+    if (v.startsWith("TARGETING_EXPRESSION") || v === "ASIN" || /^B0[A-Z0-9]{8,10}$/i.test(source) || /\bASIN\s*[=:]\s*["']?B0[A-Z0-9]{8,10}\b/i.test(source)) return "ASIN匹配";
+    if (v === "AUTO" || ["CLOSE-MATCH", "LOOSE-MATCH", "SUBSTITUTES", "COMPLEMENTS"].includes(v)) return "自动匹配";
+    return source || "未知";
   };
 
   for (const row of searchTermRows) {

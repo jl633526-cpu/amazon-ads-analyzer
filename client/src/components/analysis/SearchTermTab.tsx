@@ -19,7 +19,7 @@ import {
   BarChart,
   Bar,
 } from "recharts";
-import { isExactMatchType } from "@/lib/matchTypeUtils";
+import { canonicalMatchType, isExactMatchType } from "@/lib/matchTypeUtils";
 
 // ============================================================
 // 类型定义
@@ -264,34 +264,63 @@ function TermRow({ agg, rank }: { agg: SearchTermAggregate; rank?: number }) {
 // 子组件：匹配类型分析 Tab
 // ============================================================
 function MatchTypeTab({ analysis, ownerName }: { analysis?: SearchTermAnalysis | null; ownerName?: string }) {
+  const canonicalMatchTypes = useMemo(() => {
+    const groups = new Map<string, MatchTypeAnalysis>();
+    for (const item of analysis?.matchTypeAnalysis ?? []) {
+      const matchType = canonicalMatchType(item.matchType);
+      const existing = groups.get(matchType);
+      if (!existing) {
+        groups.set(matchType, { ...item, matchType, ownerBreakdown: item.ownerBreakdown ? [...item.ownerBreakdown] : [] });
+        continue;
+      }
+      existing.termCount += item.termCount;
+      existing.totalImpressions += item.totalImpressions;
+      existing.totalClicks += item.totalClicks;
+      existing.totalSpend += item.totalSpend;
+      existing.totalOrders += item.totalOrders;
+      existing.totalSales += item.totalSales;
+      const ownerMap = new Map((existing.ownerBreakdown ?? []).map((owner) => [owner.ownerCode || owner.ownerName, { ...owner }]));
+      for (const owner of item.ownerBreakdown ?? []) {
+        const key = owner.ownerCode || owner.ownerName;
+        const current = ownerMap.get(key);
+        if (current) {
+          current.impressions += owner.impressions; current.clicks += owner.clicks; current.spend += owner.spend; current.orders += owner.orders; current.sales += owner.sales;
+        } else ownerMap.set(key, { ...owner });
+      }
+      existing.ownerBreakdown = Array.from(ownerMap.values()).map((owner) => ({ ...owner, acos: owner.sales > 0 ? owner.spend / owner.sales : null, cvr: owner.clicks > 0 ? owner.orders / owner.clicks : null, ctr: owner.impressions > 0 ? owner.clicks / owner.impressions : null, cpc: owner.clicks > 0 ? owner.spend / owner.clicks : null, spendShare: 0 }));
+    }
+    const totalSpend = Array.from(groups.values()).reduce((sum, item) => sum + item.totalSpend, 0);
+    return Array.from(groups.values()).map((item) => ({ ...item, acos: item.totalSales > 0 ? item.totalSpend / item.totalSales : null, cvr: item.totalClicks > 0 ? item.totalOrders / item.totalClicks : null, ctr: item.totalImpressions > 0 ? item.totalClicks / item.totalImpressions : null, cpc: item.totalClicks > 0 ? item.totalSpend / item.totalClicks : null, spendShare: totalSpend > 0 ? item.totalSpend / totalSpend : 0 })).sort((a, b) => b.totalSpend - a.totalSpend);
+  }, [analysis?.matchTypeAnalysis]);
+
   // 按负责人过滤匹配类型数据
   const { filteredMatchTypes, isOwnerFiltered, hasOwnerBreakdown } = useMemo(() => {
-    if (!analysis?.matchTypeAnalysis?.length) {
+    if (!canonicalMatchTypes.length) {
       return { filteredMatchTypes: [] as MatchTypeAnalysis[], isOwnerFiltered: false, hasOwnerBreakdown: false };
     }
 
     const isFiltering = !!(ownerName && ownerName !== "ALL");
 
     if (!isFiltering) {
-      return { filteredMatchTypes: analysis.matchTypeAnalysis, isOwnerFiltered: false, hasOwnerBreakdown: false };
+      return { filteredMatchTypes: canonicalMatchTypes, isOwnerFiltered: false, hasOwnerBreakdown: false };
     }
 
     // 检查是否有 ownerBreakdown 数据
-    const hasBreakdown = analysis.matchTypeAnalysis.some(mt => mt.ownerBreakdown && mt.ownerBreakdown.length > 0);
+    const hasBreakdown = canonicalMatchTypes.some(mt => mt.ownerBreakdown && mt.ownerBreakdown.length > 0);
 
     if (!hasBreakdown) {
       // 降级回退：旧数据没有 ownerBreakdown，展示全量数据并提示重新分析
-      return { filteredMatchTypes: analysis.matchTypeAnalysis, isOwnerFiltered: false, hasOwnerBreakdown: false };
+      return { filteredMatchTypes: canonicalMatchTypes, isOwnerFiltered: false, hasOwnerBreakdown: false };
     }
 
     // 按负责人过滤：从 ownerBreakdown 中取该负责人的数据
     const result: MatchTypeAnalysis[] = [];
-    const ownerTotalSpend = analysis.matchTypeAnalysis.reduce((sum, mt) => {
+    const ownerTotalSpend = canonicalMatchTypes.reduce((sum, mt) => {
       const ob = mt.ownerBreakdown?.find(o => o.ownerName === ownerName);
       return sum + (ob?.spend ?? 0);
     }, 0);
 
-    for (const mt of analysis.matchTypeAnalysis) {
+    for (const mt of canonicalMatchTypes) {
       const ob = mt.ownerBreakdown?.find(o => o.ownerName === ownerName);
       if (!ob) continue; // 该负责人在该匹配类型下无数据，跳过
       result.push({
@@ -310,7 +339,7 @@ function MatchTypeTab({ analysis, ownerName }: { analysis?: SearchTermAnalysis |
     }
     const sorted = result.sort((a, b) => b.totalSpend - a.totalSpend);
     return { filteredMatchTypes: sorted, isOwnerFiltered: true, hasOwnerBreakdown: true };
-  }, [analysis?.matchTypeAnalysis, ownerName]);
+  }, [canonicalMatchTypes, ownerName]);
 
   // 计算各匹配类型占该负责人总花费的比例（展示全量时就是 spendShare）
   const ownerTotalSpendForShare = useMemo(() => {
@@ -684,11 +713,13 @@ export default function SearchTermTab({ data, analysis, ownerFilter: _ownerFilte
     return analysis.wordRootAnalysis.filter(r => r.root.includes(q) || r.topTerms.some(t => t.includes(q)));
   }, [analysis?.wordRootAnalysis, rootSearch]);
 
+  const canonicalMatchTypeCount = useMemo(() => new Set((analysis?.matchTypeAnalysis ?? []).map((item) => canonicalMatchType(item.matchType))).size, [analysis?.matchTypeAnalysis]);
+
   const TABS = [
     { id: "overview",  label: "搜索词概览",  icon: Search,       count: analysis?.uniqueTerms },
     { id: "scatter",   label: "二维分析",     icon: BarChart2,    count: scatterFiltered.length },
     { id: "roots",     label: "词根分析",     icon: GitBranch,    count: analysis?.wordRootAnalysis?.length },
-    { id: "matchtype", label: "匹配类型",     icon: Layers,       count: analysis?.matchTypeAnalysis?.length },
+    { id: "matchtype", label: "匹配类型",     icon: Layers,       count: canonicalMatchTypeCount },
     { id: "highvalue", label: "高价值词",     icon: Star,         count: analysis?.highValueTerms?.length },
     { id: "loss",      label: "亏损词",       icon: TrendingDown, count: analysis?.lossTerms?.length },
     { id: "invalid",   label: "无效词",       icon: XCircle,      count: analysis?.invalidTerms?.length },

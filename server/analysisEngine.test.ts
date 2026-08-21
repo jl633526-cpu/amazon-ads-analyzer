@@ -169,6 +169,19 @@ describe("runFullAnalysis - 完整分析流程", () => {
     expect(result.ownerAnalysis.length).toBe(0);
     expect(result.campaignSuggestions.length).toBe(0);
   });
+
+  it("应将具体ASIN与自动投放子类型聚合为规范匹配类型", () => {
+    const searchRows: StandardRow[] = [
+      { campaign_name: "SP_CL_ASIN", search_term: "vitamin", match_type: 'asin="B0DZNGZNLK"', spend: 100, ad_sales: 300, orders: 8, clicks: 40, impressions: 1000, owner_code: "CL", owner_name: "负责人CL", report_type: "search_term_report" },
+      { campaign_name: "SP_CL_ASIN", search_term: "vitamin", match_type: 'asin="B0BCSSTMGY"', spend: 80, ad_sales: 160, orders: 4, clicks: 30, impressions: 800, owner_code: "CL", owner_name: "负责人CL", report_type: "search_term_report" },
+      { campaign_name: "SP_CL_AUTO", search_term: "supplement", match_type: "close-match", spend: 50, ad_sales: 100, orders: 2, clicks: 20, impressions: 600, owner_code: "CL", owner_name: "负责人CL", report_type: "search_term_report" },
+    ];
+    const result = runFullAnalysis({ campaignRows: [], targetingRows: [], searchTermRows: searchRows, advertisedProductRows: [], brRows: [] });
+    const matchTypes = result.searchTermAnalysis.matchTypeAnalysis;
+    expect(matchTypes.map((item) => item.matchType)).toEqual(expect.arrayContaining(["ASIN匹配", "自动匹配"]));
+    expect(matchTypes.find((item) => item.matchType === "ASIN匹配")?.totalSpend).toBe(180);
+    expect(matchTypes).toHaveLength(2);
+  });
 });
 
 // ============================================================
