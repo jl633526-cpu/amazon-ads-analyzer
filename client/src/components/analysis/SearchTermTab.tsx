@@ -19,6 +19,7 @@ import {
   BarChart,
   Bar,
 } from "recharts";
+import { isExactMatchType } from "@/lib/matchTypeUtils";
 
 // ============================================================
 // 类型定义
@@ -195,6 +196,8 @@ const MATCH_COLORS: Record<string, string> = {
   // 中文标准化 key（匹配截图颜色）
   "广泛匹配": "#f59e0b",   // 橙色
   "精确匹配": "#0ea5e9",   // 蓝色
+  "精准匹配": "#0ea5e9",   // 旧结果兼容：领星/历史数据使用“精准匹配”
+  "紧密匹配": "#0ea5e9",   // 领星中文匹配方式兼容
   "短语匹配": "#10b981",   // 绿色
   "ASIN匹配":  "#94a3b8",   // 灰色
   "自动匹配": "#a855f7",   // 紫色
@@ -328,7 +331,7 @@ function MatchTypeTab({ analysis, ownerName }: { analysis?: SearchTermAnalysis |
   const showReanalyzeTip = !!(ownerName && ownerName !== "ALL" && !hasOwnerBreakdown);
 
   // 精确匹配占比
-  const exactMatch = filteredMatchTypes.find(mt => mt.matchType === "精确匹配");
+  const exactMatch = filteredMatchTypes.find(mt => isExactMatchType(mt.matchType));
   const exactShare = exactMatch?.spendShare ?? 0;
   const isReasonable = exactShare >= 0.7;
 
@@ -643,7 +646,11 @@ function AggSummaryBar({ items, label }: { items: SearchTermAggregate[]; label: 
 // 主组件
 // ============================================================
 export default function SearchTermTab({ data, analysis, ownerFilter: _ownerFilter, ownerName }: Props) {
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get("searchTab");
+    const supportedTabs = ["overview", "scatter", "roots", "matchtype", "highvalue", "loss", "invalid", "potential", "topspend", "negate", "toexact", "amplify", "owners"];
+    return requestedTab && supportedTabs.includes(requestedTab) ? requestedTab : "overview";
+  });
   const [rootSearch, setRootSearch] = useState("");
   const [scatterCategory, setScatterCategory] = useState<WordCategory | "all">("all");
 
