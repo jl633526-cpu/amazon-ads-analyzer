@@ -15,21 +15,12 @@ import {
   getAnalysisResultByTaskId,
   setTaskShareToken,
   getTaskByShareToken,
-  createProductAnalysisTask,
-  updateProductAnalysisTaskStatus,
-  getProductAnalysisTaskById,
-  getProductAnalysisTasksByUserId,
-  createProductAnalysisFile,
-  getProductAnalysisFilesByTaskId,
-  saveProductAnalysisResult,
-  getProductAnalysisResultByTaskId,
 } from "./db";
 import { randomBytes } from "crypto";
 import { parseReportBuffer } from "./reportParser";
 import { runFullAnalysis } from "./analysisEngine";
 import type { StandardRow } from "./reportParser";
 import { storageGetSignedUrl } from "./storage";
-import { analyzeProductPerformance, parseProductPerformanceBuffer } from "./productPerformanceEngine";
 
 export const appRouter = router({
   system: systemRouter,
@@ -167,63 +158,6 @@ export const appRouter = router({
       }),
   }),
 
-  // ============================================================
-  // 独立产品表现分析任务路由
-  // ============================================================
-  productAnalysis: router({
-    listTasks: protectedProcedure.query(async ({ ctx }) => {
-      const tasks = await getProductAnalysisTasksByUserId(ctx.user.id);
-      return tasks.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-    }),
-
-    getTask: protectedProcedure
-      .input(z.object({ taskId: z.number() }))
-      .query(async ({ ctx, input }) => {
-        const task = await getProductAnalysisTaskById(input.taskId);
-        if (!task || task.userId !== ctx.user.id) throw new TRPCError({ code: "NOT_FOUND", message: "产品分析任务不存在" });
-        const files = await getProductAnalysisFilesByTaskId(input.taskId);
-        return { task, files };
-      }),
-
-    getResult: protectedProcedure
-      .input(z.object({ taskId: z.number() }))
-      .query(async ({ ctx, input }) => {
-        const task = await getProductAnalysisTaskById(input.taskId);
-        if (!task || task.userId !== ctx.user.id) throw new TRPCError({ code: "NOT_FOUND", message: "产品分析任务不存在" });
-        if (task.status !== "completed") return { status: task.status, result: null };
-        return { status: task.status, result: await getProductAnalysisResultByTaskId(input.taskId) };
-      }),
-
-    createTask: protectedProcedure
-      .input(z.object({ name: z.string().min(1).max(255) }))
-      .mutation(async ({ ctx, input }) => ({ taskId: await createProductAnalysisTask(ctx.user.id, input.name) })),
-
-    saveFileInfo: protectedProcedure
-      .input(z.object({
-        taskId: z.number(),
-        periodRole: z.enum(["current", "prior"]),
-        originalName: z.string(),
-        fileKey: z.string(),
-        fileUrl: z.string(),
-        rowCount: z.number(),
-      }))
-      .mutation(async ({ ctx, input }) => {
-        const task = await getProductAnalysisTaskById(input.taskId);
-        if (!task || task.userId !== ctx.user.id) throw new TRPCError({ code: "NOT_FOUND", message: "产品分析任务不存在" });
-        await createProductAnalysisFile(input);
-        return { success: true };
-      }),
-
-    runAnalysis: protectedProcedure
-      .input(z.object({ taskId: z.number() }))
-      .mutation(async ({ ctx, input }) => {
-        const task = await getProductAnalysisTaskById(input.taskId);
-        if (!task || task.userId !== ctx.user.id) throw new TRPCError({ code: "NOT_FOUND", message: "产品分析任务不存在" });
-        if (task.status === "processing") throw new TRPCError({ code: "BAD_REQUEST", message: "产品分析正在处理中" });
-        runProductAnalysisAsync(input.taskId).catch(console.error);
-        return { success: true, message: "产品分析已开始" };
-      }),
-  }),
 });
 
 export type AppRouter = typeof appRouter;
@@ -306,43 +240,5 @@ async function runAnalysisAsync(taskId: number) {
   } catch (err) {
     console.error("[Analysis] Fatal error:", err);
     await updateTaskStatus(taskId, "failed", String(err));
-  }
-}
-
-async function runProductAnalysisAsync(taskId: number) {
-  try {
-    await updateProductAnalysisTaskStatus(taskId, "processing");
-    const files = await getProductAnalysisFilesByTaskId(taskId);
-    const currentFiles = files.filter((file) => file.periodRole === "current");
-    if (!currentFiles.length) {
-      await updateProductAnalysisTaskStatus(taskId, "failed", "请上传本期产品表现报告");
-      return;
-    }
-
-    const currentRows = [] as ReturnType<typeof parseProductPerformanceBuffer>["rows"];
-    const priorRows = [] as ReturnType<typeof parseProductPerformanceBuffer>["rows"];
-    let currentPeriod: string | null = null;
-    let priorPeriod: string | null = null;
-
-    for (const file of files) {
-      const signedUrl = await storageGetSignedUrl(file.fileKey);
-      const response = await fetch(signedUrl);
-      if (!response.ok) throw new Error(`无法读取文件 ${file.originalName}`);
-      const parsed = parseProductPerformanceBuffer(Buffer.from(await response.arrayBuffer()), file.originalName);
-      if (file.periodRole === "current") {
-        currentRows.push(...parsed.rows);
-        currentPeriod = parsed.period ?? currentPeriod;
-      } else {
-        priorRows.push(...parsed.rows);
-        priorPeriod = parsed.period ?? priorPeriod;
-      }
-    }
-
-    const result = analyzeProductPerformance(currentRows, priorRows, currentPeriod, priorPeriod);
-    await saveProductAnalysisResult(taskId, result as unknown as Record<string, unknown>);
-    await updateProductAnalysisTaskStatus(taskId, "completed");
-  } catch (error) {
-    console.error("[ProductAnalysis] Failed:", error);
-    await updateProductAnalysisTaskStatus(taskId, "failed", String(error));
   }
 }

@@ -148,9 +148,6 @@ export default function Home() {
                 查看历史分析
               </Button>
             )}
-            <Button size="lg" variant="outline" className="text-base px-8 h-12 border-cyan-400/30 text-cyan-300 hover:bg-cyan-400/10" onClick={() => isAuthenticated ? navigate("/product-analysis/upload") : (window.location.href = getLoginUrl())}>
-              产品表现分析
-            </Button>
           </div>
         </div>
       </section>

@@ -9,8 +9,6 @@ import Upload from "./pages/Upload";
 import Analysis from "./pages/Analysis";
 import Dashboard from "./pages/Dashboard";
 import SharedAnalysis from "./pages/SharedAnalysis";
-import ProductAnalysisUpload from "./pages/ProductAnalysisUpload";
-import ProductAnalysis from "./pages/ProductAnalysis";
 
 function Router() {
   return (
@@ -20,8 +18,6 @@ function Router() {
       <Route path="/analysis/:taskId" component={Analysis} />
       <Route path="/share/:shareToken" component={SharedAnalysis} />
       <Route path="/dashboard" component={Dashboard} />
-      <Route path="/product-analysis/upload" component={ProductAnalysisUpload} />
-      <Route path="/product-analysis/:taskId" component={ProductAnalysis} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
