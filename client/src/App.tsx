@@ -10,12 +10,14 @@ import Analysis from "./pages/Analysis";
 import Dashboard from "./pages/Dashboard";
 import SharedAnalysis from "./pages/SharedAnalysis";
 import WeeklyOverview from "./pages/WeeklyOverview";
+import MatchTypeAnalysis from "./pages/MatchTypeAnalysis";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/upload" component={Upload} />
+      <Route path="/analysis/:taskId/match-types" component={MatchTypeAnalysis} />
       <Route path="/analysis/:taskId" component={Analysis} />
       <Route path="/share/:shareToken" component={SharedAnalysis} />
       <Route path="/dashboard" component={Dashboard} />
